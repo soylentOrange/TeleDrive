@@ -14,8 +14,8 @@ class WebSite {
     explicit WebSite(AsyncWebServer& webServer) : _webServer(&webServer) { _sr.setWaiting(); }
     void begin(Scheduler* scheduler);
     void end();
-    // typedef std::function<void(JsonDocument doc)> SpooldataCallback;
-    // void listenSpooldata(SpooldataCallback callback) { _spooldataCallback = callback; }
+    typedef std::function<void(JsonDocument doc)> WebEventCallback;
+    void listenWebEvent(WebEventCallback callback) { _webEventCallback = callback; }
     StatusRequest* getStatusRequest();
 
   private:
@@ -27,12 +27,8 @@ class WebSite {
     AsyncWebServer* _webServer;
     AsyncWebSocket* _ws = nullptr;
     uint32_t _disconnectTime;
-    // bool _cloneSerial = false;
-    // SpooldataCallback _spooldataCallback = nullptr;
-    // void _tagReadCallback(CFSTag tag);
-    // void _tagWriteCallback(bool success);
-    // static void _denyUpload(AsyncWebServerRequest* request, __unused String filename, __unused size_t index, __unused uint8_t* data, __unused size_t len, __unused bool final) { // don't accept file uploads
-    //   request->send(400);
-    // }
-    // static void _ignoreRequest(__unused AsyncWebServerRequest* request) {}
+    // to be called by website for motor specific events
+    WebEventCallback _webEventCallback = nullptr;
+    // to be called by stepper for motor specific events
+    void _motorEventCallback(JsonDocument doc);
 };

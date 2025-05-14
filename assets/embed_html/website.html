@@ -610,17 +610,17 @@
           <div class="info_text_name">Destination:</div>
           <div class="info_text_value important" id="positionText">0 mm</div>
         </div>
-        <input type="range" min="0" max="530" value="0" class="slider" id="positionSlider" step="1">
+        <input type="range" min="0" max="470" value="0" class="slider" id="positionSlider" step="1">
         <div class="info_text_container very_important">
           <div class="info_text_name">Speed:</div>
           <div class="info_text_value important" id="speedText">0 mm/s</div>
         </div>
-        <input type="range" min="0" max="400" value="0" class="slider" id="speedSlider" step="1">
+        <input type="range" min="0" max="160" value="0" class="slider" id="speedSlider" step="1">
         <div class="info_text_container very_important">
           <div class="info_text_name">Acceleration:</div>
           <div class="info_text_value important" id="accelerationText">0 mm/s²</div>
         </div>
-        <input type="range" min="0" max="400" value="0" class="slider" id="accelerationSlider" step="1">
+        <input type="range" min="0" max="1600" value="0" class="slider" id="accelerationSlider" step="1">
         <div class="buttonContainer">
           <button id="stopMoveBtn" disabled>Stop</button>
           <button id="startMoveBtn" disabled>Go</button>
@@ -718,6 +718,7 @@
   const info_text_driver = document.getElementById("info_text_driver")
   const info_text_board = document.getElementById("info_text_board")
   const info_text_build = document.getElementById("info_text_build")
+  // TODO(me): checkboxes!
   // const beeper_checkbox = document.getElementById("toggle_switch_checkbox_beeper")
   // const write_empty_checkbox = document.getElementById("toggle_switch_checkbox_rewrite")
   // const clone_checkbox = document.getElementById("toggle_switch_checkbox_clone")
@@ -751,11 +752,15 @@
   let ros_state = ros_state_enum.unknown
 
   const motor_state_enum = {
-    unknown: "unknown",
-    idle: "idle",
-    homing: "homing",
-    driving: "driving",
-    error: "error",
+    unknown: "UNKNOWN",
+    unitialized: "UNINITIALIZED",
+    idle: "IDLE",
+    homing: "HOMING",
+    homed: "HOMED",
+    driving: "DRIVING",
+    arrived: "ARRIVED",
+    stopped: "STOPPED",
+    error: "ERROR",
   }
 
   let motor_state = motor_state_enum.unknown
@@ -793,8 +798,6 @@
     info_text_board.innerHTML = await getInfo("/boardname")
     info_text_build.innerHTML = await getInfo("/appversion")
 
-    // register button handlers...
-
     // show main view (default)
     mainBtn.addEventListener("click", () => {
       showMain()
@@ -803,6 +806,21 @@
     // show the second page
     settingsBtn.addEventListener("click", () => {
       showSettings()
+    })
+
+    // go button
+    startMoveBtn.addEventListener("click", () => {
+      startMove()
+    })
+
+    // stop button
+    stopMoveBtn.addEventListener("click", () => {
+      stopMove()
+    })
+
+    // home button
+    homingBtn.addEventListener("click", () => {
+      doHoming()
     })
 
     // Event handler for position slider
@@ -851,6 +869,7 @@
     }, 3000)
     help_text.innerHTML = "Connecting..."
     showWebsockStatus(websock_state_enum.connecting)
+    showMotorStatus(motor_state_enum.unknown)
     websocket = new WebSocket(gateway)
     websocket.onopen = onOpen
     websocket.onclose = onClose
@@ -881,7 +900,7 @@
 
   // websock connection message received callback
   function onMessage(event) {
-    // TODO
+    // TODO(me): implement!
     if (event.data == "pong") {
       clearTimeout(pingTimeout)
       pingTimeout = false
@@ -893,55 +912,25 @@
         case "initial_config":
           // this is our id...
           clientID = msg.id
-          msg.origin = DISCONNECTED_CLIENT_ID
-          // onWsConfig(msg)
-          // onWsArming(msg)
+          // msg.config.origin = DISCONNECTED_CLIENT_ID
+          // onWsConfig(msg.config)
+          onWsMotorState(msg.motor_state)
+          onWsMovementState(msg.move_state)
           break
 
-        case "arm_state":
-          onWsSpooldata(msg)
-          onWsArming(msg)
+        // case "config":
+        //   onWsConfig(msg)
+        //   break
+
+        // position and speed updates
+        case "move_state":
+          onWsMovementState(msg)
           break
 
-        case "update_config":
-          onWsConfig(msg)
+        // diagnostic an run events
+        case "motor_state":
+          onWsMotorState(msg)
           break
-
-        // // an empty tag was identified by the reader
-        // case "read_tag":
-        //   let uidString = `${msg.uid}`.toUpperCase()
-        //   Toastify({
-        //     text:
-        //       `Found empty tag
-        //       uid: ${uidString}`,
-        //     duration: 3000,
-        //     avatar: "data:image/svg+xml;base64," + btoa(tag_svg)
-        //   }).showToast()
-        //   break
-
-        // // a spool was identified by the reader
-        // case "read_spool":
-        //   Toastify({
-        //     text:
-        //       `Found spool
-        //       serial: ${msg.spooldata.serial.toString(6).padStart(6, '0')}
-        //       color: ${msg.spooldata.color}`,
-        //     duration: 5000,
-        //     avatar: "data:image/svg+xml;base64," + btoa(spool_svg.replace("fill:#000000", "fill:" + msg.spooldata.color)),
-        //     onClick: function () { cacheSpoolMaterial(msg.spooldata); disarmProgrammer(); }
-        //   }).showToast()
-        //   break
-
-        // // a spool was written by the reader
-        // case "write_spool":
-        //   Toastify({
-        //     text:
-        //       `Writing Spool
-        //       ${msg.result ? "Successful" : "Failed"}`,
-        //     duration: 3000,
-        //     avatar: "data:image/svg+xml;base64," + btoa(msg.result ? success_svg : error_svg)
-        //   }).showToast()
-        //   break
       }
     }
   }
@@ -949,6 +938,12 @@
   // got configuration via websock
   function onWsConfig(configJSON) {
     // TODO
+
+    // StallGuard
+    // StallGuard homing
+    // CoolStep
+    // SilentStep
+
     // if (configJSON.origin != clientID) {
     //   beepOnRW = configJSON.beepOnRW
     //   beeper_checkbox.checked = beepOnRW
@@ -969,247 +964,127 @@
     // }
   }
 
-  // // got arming response via websock
-  // function onWsArming(armingJSON) {
-  //   let toast_text_content = ""
-  //   let help_text_content = ""
+  // got movement update via websock
+  function onWsMovementState(moveJSON) {
+    positionCurrentText.innerText = `${moveJSON.position} mm`
+    speedCurrentText.innerText = `${moveJSON.speed} mm/s`
+  }
 
-  //   // make a toast when the arming state was changed or on initial connection (in case the programmer is already armed)
-  //   let do_notification = (writeTags != armingJSON.writeTags) || ((armingJSON.origin == DISCONNECTED_CLIENT_ID) && armingJSON.writeTags)
+  // got motor event via websock
+  function onWsMotorState(stateJSON) {
+    showMotorStatus(stateJSON.state)
 
-  //   if (!armingJSON.writeTags) {
-  //     help_text_content = "Waiting to read..."
-  //     toast_text_content = "Disarmed\n" + help_text_content
-  //   }
-  //   else {
-  //     help_text_content = `Waiting to ${armingJSON.writeEmptyTags ? "W" : "(Re-)W"}rite...`
-  //     toast_text_content = "Armed\n" + help_text_content
-  //   }
+    // show toast for some messages
+    switch (stateJSON.state) {
+      case motor_state_enum.idle:
+        Toastify({
+          text: "Motor:\nReady to move...",
+          duration: 3000,
+          avatar: "data:image/svg+xml;base64," + btoa(success_svg)
+        }).showToast()
+        if (typeof stateJSON.destination != undefined && stateJSON.origin != clientID) {
+          positionSlider.value = stateJSON.destination.position
+          speedSlider.value = stateJSON.destination.speed
+          accelerationSlider.value = stateJSON.destination.acceleration
+          positionText.innerText = `${stateJSON.destination.position} mm`
+          speedText.innerText = `${stateJSON.destination.speed} mm/s`
+          accelerationText.innerText = `${stateJSON.destination.acceleration} mm/s²`
+        }
+        break
+      case motor_state_enum.error:
+        Toastify({
+          text: `Motor Error:\n${stateJSON.error}`,
+          duration: 5000,
+          avatar: "data:image/svg+xml;base64," + btoa(error_svg)
+        }).showToast()
+        break
+      case motor_state_enum.driving:
+        Toastify({
+          text: `Motor:\nStarted Movement`,
+          duration: 3000,
+          avatar: "data:image/svg+xml;base64," + btoa(success_svg)
+        }).showToast()
+        if (typeof stateJSON.destination != undefined && stateJSON.origin != clientID) {
+          positionSlider.value = stateJSON.destination.position
+          speedSlider.value = stateJSON.destination.speed
+          accelerationSlider.value = stateJSON.destination.acceleration
+          positionText.innerText = `${stateJSON.destination.position} mm`
+          speedText.innerText = `${stateJSON.destination.speed} mm/s`
+          accelerationText.innerText = `${stateJSON.destination.acceleration} mm/s²`
+        }
+        break
+      case motor_state_enum.homing:
+        Toastify({
+          text: `Motor:\nStarted Homing`,
+          duration: 3000,
+          avatar: "data:image/svg+xml;base64," + btoa(success_svg)
+        }).showToast()
+        if (typeof stateJSON.move_state != undefined) {
+          onWsMovementState(stateJSON.move_state)
+        }
+        break
+      case motor_state_enum.homed:
+        Toastify({
+          text: `Motor:\nHoming Done`,
+          duration: 3000,
+          avatar: "data:image/svg+xml;base64," + btoa(success_svg)
+        }).showToast()
+        if (typeof stateJSON.move_state != undefined) {
+          onWsMovementState(stateJSON.move_state)
+        }
+        break        
+      case motor_state_enum.stopped:
+        Toastify({
+          text: `Motor:\nMovement Done`,
+          duration: 3000,
+          avatar: "data:image/svg+xml;base64," + btoa(success_svg)
+        }).showToast()
+        if (typeof stateJSON.move_state != undefined) {
+          onWsMovementState(stateJSON.move_state)
+        }
+        break
+      case motor_state_enum.arrived:
+        Toastify({
+          text: `Motor:\nAlready There`,
+          duration: 3000,
+          avatar: "data:image/svg+xml;base64," + btoa(success_svg)
+        }).showToast()
+        break
+    }
+  }
 
-  //   if ((writeEmptyTags != armingJSON.writeEmptyTags) || (writeTags != armingJSON.writeTags)) {
-  //     help_text.innerText = help_text_content
-  //   }
+  // go button
+  function startMove() {
+    if (clientID != DISCONNECTED_CLIENT_ID) {
+      websocket.send(JSON.stringify({
+        type: "move",
+        origin: clientID,
+        position: positionSlider.value,
+        speed: speedSlider.value,
+        acceleration: accelerationSlider.value
+      }))
+    }
+  }
 
-  //   if (writeEmptyTags != armingJSON.writeEmptyTags) {
-  //     writeEmptyTags = armingJSON.writeEmptyTags
-  //     write_empty_checkbox.checked = writeEmptyTags
-  //   }
+  // stop button
+  function stopMove() {
+    if (clientID != DISCONNECTED_CLIENT_ID) {
+      websocket.send(JSON.stringify({
+        type: "stop",
+        origin: clientID
+      }))
+    }
+  }
 
-  //   if (writeTags != armingJSON.writeTags) {
-  //     writeTags = armingJSON.writeTags
-  //   }
-
-  //   if (do_notification)
-  //     Toastify({
-  //       text: toast_text_content,
-  //       duration: 3000,
-  //       avatar: "data:image/svg+xml;base64," + btoa(tag_svg)
-  //     }).showToast();
-  // }
-
-
-  // // check for ipv4 address and spilt into four parts
-  // function splitIpAddress(ip) {
-  //   const parts = ip.split(/[.:]/);
-  //   if (parts.length === 4) {
-  //     for (const part of parts) {
-  //       const num = parseInt(part);
-  //       if (isNaN(num) || num < 0 || num > 255) {
-  //         throw new Error("Invalid ip part")
-  //       }
-  //     }
-  //     return parts;
-  //   } else {
-  //     throw new Error("Invalid ip")
-  //   }
-  // }
-
-  // // fetch and parse info from printer
-  // async function isK2Plus(ip) {
-  //   try {
-  //     const response = await fetch(`http://${ip}/info`)
-  //     if (!response.ok) {
-  //       throw new Error("fetch error")
-  //     }
-
-  //     const deviceInfo = await response.json()
-  //     if (typeof (deviceInfo["model"]) == undefined) {
-  //       throw new Error("unexpected data")
-  //     }
-
-  //     if (deviceInfo["model"] != "F008") {
-  //       throw new Error("wrong printer")
-  //     }
-
-  //     console.log(`success at ${ip}`)
-  //     return ip
-  //   } catch (error) {
-  //     throw new Error(`${error} at ${ip}`)
-  //   }
-  // }
-
-  // // try to find a printer on the local network
-  // async function findK2Plus(ip) {
-  //   let ip_parts = splitIpAddress(ip)
-  //   let ip_subnet = `${ip_parts[0]}.${ip_parts[1]}.${ip_parts[2]}.`
-  //   let nodes = []
-  //   for (let i = 2; i <= 254; i++)
-  //     nodes.push(ip_subnet + `${i}`)
-
-  //   try {
-  //     const requests = nodes.map((node) => isK2Plus(node))
-  //     const printer = await Promise.any(requests)
-  //     return printer
-  //   } catch (error) {
-  //     throw new Error("None found")
-  //   }
-  // }
-
-  // // download, compress and upload material database
-  // async function uploadDbfromPrinter(ip) {
-  //   if (typeof ip == undefined) {
-  //     throw new Error("No K2Plus found...")
-  //   }
-
-  //   try {
-  //     // download the database from printer
-  //     const downloadResponse = await fetch(`http://${ip}/downloads/defData/material_database.json`)
-  //     if (!downloadResponse.ok) {
-  //       throw new Error("Error while downloading...")
-  //     }
-  //     const printerDb = await downloadResponse.text()
-
-  //     // Compress database
-  //     const textEncoder = new TextEncoder()
-  //     let encodedDb = textEncoder.encode(printerDb)
-  //     let compressedDb = await compress(encodedDb)
-
-  //     // Prepare upload
-  //     let formData = new FormData();
-  //     const bytes = new Uint8Array(compressedDb)
-  //     const blob = new Blob([bytes], { type: 'application/octet-stream' })
-  //     console.log("blob.size: " + blob.size)
-  //     formData.append('dbfile', blob, 'material_database.json.gz')
-  //     const uploadResponse = await fetch('/material_database.json', {
-  //       method: "POST",
-  //       body: formData
-  //     })
-
-  //     // check for error
-  //     if (!uploadResponse.ok) {
-  //       throw new Error(`Error while uploading (status: ${uploadResponse.status})...`)
-  //     }
-
-  //     const uploadResult = await uploadResponse.text()
-  //     console.log("uploadResult: " + uploadResult)
-  //     if (uploadResult != "OK") {
-  //       throw new Error(`Error while uploading (response: ${uploadResult})...`)
-  //     }
-  //   } catch (error) {
-  //     console.log(error)
-  //     throw new Error("Error while processing...")
-  //   }
-  // }
-
-
-  // // update UI from cached material
-  // function showSpoolMaterial() {
-  //   materialColorPicker.value = spoolMaterial.color
-  //   materialColorText.innerText = spoolMaterial.color
-  //   materialWeightSlider.value = spoolMaterial.weight
-  //   materialWeightText.innerText = `${spoolMaterial.weight} g`
-  //   materialBrand.value = spoolMaterial.brand
-  //   change_types(spoolMaterial.type)
-  // }
-
-  // // reset to default and disarm
-  // function resetSpoolMaterial() {
-  //   cacheSpoolMaterial({
-  //     brand: "Generic",
-  //     type: "00001",
-  //     weight: 1000,
-  //     color: "#000000",
-  //   })
-  //   showSpoolMaterial()
-  //   disarmProgrammer()
-  // }
-
-  // // send config to thingy
-  // function sendConfig() {
-  //   if (clientID != DISCONNECTED_CLIENT_ID) {
-  //     websocket.send(JSON.stringify({
-  //       type: "update_config",
-  //       beepOnRW: beepOnRW,
-  //       cloneSerial: cloneSerial
-  //     }))
-  //   }
-  // }
-
-  // // send arming-command to thingy
-  // function armProgrammer() {
-  //   if (clientID != DISCONNECTED_CLIENT_ID) {
-  //     writeTags = true
-  //     help_text.innerText = `Waiting to ${writeEmptyTags ? "W" : "(Re-)W"}rite...`
-  //     let spoolMaterialTX = spoolMaterial
-  //     if (!cloneSerial)
-  //       spoolMaterialTX.serial = null
-  //     websocket.send(JSON.stringify({
-  //       type: "arm_state",
-  //       writeTags: true,
-  //       writeEmptyTags: writeEmptyTags,
-  //       spooldata: spoolMaterialTX
-  //     }))
-  //   }
-  // }
-
-  // // send disarming-command to thingy
-  // function disarmProgrammer() {
-  //   if (clientID != DISCONNECTED_CLIENT_ID) {
-  //     writeTags = false
-  //     help_text.innerText = "Waiting to read..."
-  //     websocket.send(JSON.stringify({
-  //       type: "arm_state",
-  //       writeTags: false,
-  //       writeEmptyTags: writeEmptyTags
-  //     }))
-  //   }
-  // }
-
-  // // change the option of select field based on vendor
-  // function change_types(setId) {
-  //   // clear the options
-  //   while (materialType.options.length > 0) {
-  //     materialType.options.remove(0)
-  //   }
-
-  //   // Update the option
-  //   let filamentlist = materialBrand.value == "Creality" ? crealityFilaments : genericFilaments
-  //   let idlist = materialBrand.value == "Creality" ? crealityFilamentsIDs : genericFilamentsIDs
-  //   for (let i in filamentlist) {
-  //     materialType.options.add(new Option(text = filamentlist[i].name, value = filamentlist[i].id))
-  //   }
-
-  //   if (setId == undefined) {
-  //     // and just select the first entry
-  //     materialType.value = filamentlist[0].id
-  //     spoolMaterial.type = filamentlist[0].id
-  //     materialType.selectedIndex = 0
-  //   } else { // try to find the requested material in the list
-  //     let index = idlist.findIndex((element) => element == setId)
-  //     if (index == -1) { // failed, just use the first entry
-  //       materialType.value = filamentlist[0].id
-  //       spoolMaterial.type = filamentlist[0].id
-  //       materialType.selectedIndex = 0
-  //     } else { // set value and selectedIndex
-  //       materialType.value = setId
-  //       spoolMaterial.type = setId
-  //       materialType.selectedIndex = idlist.findIndex((element) => element == setId)
-  //     }
-  //   }
-
-  //   // set brand
-  //   spoolMaterial.brand = materialBrand.value
-  // }
+  // home button
+  function doHoming() {
+    if (clientID != DISCONNECTED_CLIENT_ID) {
+      websocket.send(JSON.stringify({
+        type: "home",
+        origin: clientID
+      }))
+    }
+  }
 
   function showROSStatus(state) {
     const statusROSUnknown = document.getElementById("statusROSUnknown")
@@ -1260,6 +1135,11 @@
     motor_state = state
 
     switch (state) {
+      // temporary states/events (motor will be idle afterwards)
+      case motor_state_enum.homed:
+      case motor_state_enum.stopped:
+      case motor_state_enum.arrived:
+        motor_state = motor_state_enum.idle
       case motor_state_enum.idle:
         statusMotorIdle.style.display = "inline-block"
         startMoveBtn.disabled = false
@@ -1281,7 +1161,19 @@
         statusMotorError.style.display = "inline-block"
         startMoveBtn.disabled = true
         stopMoveBtn.disabled = true
-        homingBtn.disabled = false
+        homingBtn.disabled = true
+        positionSlider.disabled = true
+        speedSlider.disabled = true
+        accelerationSlider.disabled = true
+        break
+      case motor_state_enum.unitialized:
+        statusMotorUnknown.style.display = "inline-block"
+        startMoveBtn.disabled = true
+        stopMoveBtn.disabled = true
+        positionSlider.disabled = true
+        speedSlider.disabled = true
+        accelerationSlider.disabled = true
+        homingBtn.disabled = true
         break
       default:
         statusMotorUnknown.style.display = "inline-block"

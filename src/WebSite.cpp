@@ -5,7 +5,6 @@
 
 #include <ArduinoJson.h>
 #include <AsyncJson.h>
-#include <Preferences.h>
 #include <thingy.h>
 
 #include <string>
@@ -35,7 +34,7 @@ void WebSite::begin(Scheduler* scheduler) {
 }
 
 void WebSite::end() {
-  // _spooldataCallback = nullptr;
+  _webEventCallback = nullptr;
   _sr.setWaiting();
 
   // end the cleanup task
@@ -47,7 +46,6 @@ void WebSite::end() {
   // delete websock handler
   if (_ws != nullptr) {
     _webServer->removeHandler(_ws);
-    delete _ws;
     _ws = nullptr;
   }
 
@@ -60,13 +58,6 @@ void WebSite::end() {
 // Add Handlers to the webserver
 void WebSite::_webSiteCallback() {
   LOGD(TAG, "Starting WebSite...");
-
-  LOGD(TAG, "Get persistent options from preferences...");
-  // Preferences preferences;
-  // preferences.begin("tdrive", true);
-  // _beepOnRW = preferences.getBool("beep", false);
-  // _cloneSerial = preferences.getBool("clone", false);
-  // preferences.end();
 
   // Allow web-logging for app via WebSerial
 #ifdef MYCILA_WEBSERIAL_SUPPORT_APP
@@ -85,34 +76,19 @@ void WebSite::_webSiteCallback() {
       client->keepAlivePeriod(10);
       client->setCloseClientOnQueueFull(false);
 
-      // send ID, config, spooldata, arming,...
+      // send ID, motor_state, position, speed,...
       JsonDocument jsonMsg;
       jsonMsg["type"] = "initial_config";
       jsonMsg["id"] = client->id();
-//       jsonMsg["host"] = espNetwork.getESPConnect()->getIPAddress().toString().c_str();
-//       jsonMsg["cloneSerial"] = _cloneSerial;
-// #ifdef USE_BEEPER
-//       jsonMsg["beepAvailable"] = true;
-//       jsonMsg["beepOnRW"] = _beepOnRW;
-// #else
-//       jsonMsg["beepAvailable"] = false;
-//       jsonMsg["beepOnRW"] = false;
-// #endif
-//       jsonMsg["writeTags"] = rfid.getWriteEnabled();
-//       jsonMsg["writeEmptyTags"] = !rfid.getOverwriteEnabled();
-//       jsonMsg["PN532"] = rfid.getStatus();
-
-//       // append spooldata - from RFID - only when length is available
-//       JsonDocument jsonSpool = static_cast<JsonDocument>(rfid.getSpooldata());
-//       if (jsonSpool["length"].as<const uint32_t>() > 0) {
-//         jsonMsg["spooldata"] = jsonSpool;
-      // }
-
-      // send welcome message
+      jsonMsg["move_state"]["position"] = stepper.getCurrentPosition();
+      jsonMsg["move_state"]["speed"] = stepper.getCurrentSpeed();
+      jsonMsg["motor_state"]["state"] = stepper.getMotorState_as_string().c_str();
+      jsonMsg["motor_state"]["destination"]["position"] = stepper.getDestinationPosition();
+      jsonMsg["motor_state"]["destination"]["speed"] = stepper.getDestinationSpeed();
+      jsonMsg["motor_state"]["destination"]["acceleration"] = stepper.getDestinationAcceleration();
       AsyncWebSocketMessageBuffer* buffer = new AsyncWebSocketMessageBuffer(measureJson(jsonMsg));
       serializeJson(jsonMsg, buffer->get(), buffer->length());
       client->text(buffer);
-      LOGD(TAG, "Client %d connected", client->id());
     } else if (type == WS_EVT_DISCONNECT) {
       LOGD(TAG, "Client %d disconnected", client->id());
     } else if (type == WS_EVT_ERROR) {
@@ -127,9 +103,21 @@ void WebSite::_webSiteCallback() {
         if (strcmp(reinterpret_cast<char*>(data), "ping") == 0) {
           // LOGD(TAG, "Client %d pinged us", client->id());
           client->text("pong");
+        } else { // some message is received
+          JsonDocument jsonRXMsg;
+          DeserializationError error = deserializeJson(jsonRXMsg, reinterpret_cast<char*>(data));
+          if (error == DeserializationError::Ok) {
+            // ...pass command to stepper and let it decide...
+            if (_webEventCallback != nullptr) {
+              _webEventCallback(jsonRXMsg);
+            } else {
+              LOGE(TAG, "No event listener (_webEventCallback) available!");
+            }
+          }
         }
       }
-    } });
+    }
+  });
 
   _webServer->addHandler(_ws);
 
@@ -165,12 +153,9 @@ void WebSite::_webSiteCallback() {
               request->send(response); })
     .setFilter([](__unused AsyncWebServerRequest* request) { return eventHandler.getNetworkState() != Mycila::ESPConnect::State::PORTAL_STARTED; });
 
-  // // register event handlers to reader
-  // LOGD(TAG, "register event handlers to reader");
-  // rfid.listenTagRead([&](CFSTag tag)
-  //                    { _tagReadCallback(tag); });
-  // rfid.listenTagWrite([&](bool success)
-  //                     { _tagWriteCallback(success); });
+  // register event handlers to stepper
+  LOGD(TAG, "register event handlers to stepper");
+  stepper.listenMotorEvent([&](JsonDocument doc) { _motorEventCallback(doc); });
 
   // set up a task to cleanup orphan websock-clients
   _disconnectTime = millis();
@@ -186,51 +171,15 @@ StatusRequest* WebSite::getStatusRequest() {
   return &_sr;
 }
 
-// // Handle spooldata from reader received event
-// void WebSite::_tagReadCallback(CFSTag tag)
-// {
-//   if (tag.isEmpty())
-//   {
-//     JsonDocument jsonMsg;
-//     jsonMsg["type"] = "read_tag";
-//     jsonMsg["uid"] = static_cast<std::string>(tag.getUid()).c_str();
-//     AsyncWebSocketMessageBuffer *buffer = new AsyncWebSocketMessageBuffer(measureJson(jsonMsg));
-//     serializeJson(jsonMsg, buffer->get(), buffer->length());
-//     if (_ws->count())
-//     {
-//       _ws->textAll(buffer);
-//     }
-//   }
-//   else
-//   {
-//     SpoolData spooldata = tag.getSpooldata();
-//     JsonDocument jsonMsg;
-//     jsonMsg["type"] = "read_spool";
-//     jsonMsg["uid"] = static_cast<std::string>(tag.getUid()).c_str();
-//     jsonMsg["spooldata"] = static_cast<JsonDocument>(tag.getSpooldata());
-//     AsyncWebSocketMessageBuffer *buffer = new AsyncWebSocketMessageBuffer(measureJson(jsonMsg));
-//     serializeJson(jsonMsg, buffer->get(), buffer->length());
-//     if (_ws->count())
-//     {
-//       _ws->textAll(buffer);
-//     }
-//   }
-// }
-
-// // Handle spooldata written by reader event
-// void WebSite::_tagWriteCallback(bool success)
-// {
-//   LOGD(TAG, "Spooldata written %s", success ? "sucessfully" : "unsucessfully");
-//   JsonDocument jsonMsg;
-//   jsonMsg["type"] = "write_spool";
-//   jsonMsg["result"] = success;
-//   AsyncWebSocketMessageBuffer *buffer = new AsyncWebSocketMessageBuffer(measureJson(jsonMsg));
-//   serializeJson(jsonMsg, buffer->get(), buffer->length());
-//   if (_ws->count())
-//   {
-//     _ws->textAll(buffer);
-//   }
-// }
+// Handle events from motor
+// just forward the event to the website client(s)
+void WebSite::_motorEventCallback(JsonDocument doc) {
+  AsyncWebSocketMessageBuffer* buffer = new AsyncWebSocketMessageBuffer(measureJson(doc));
+  serializeJson(doc, buffer->get(), buffer->length());
+  if (_ws->count()) {
+    _ws->textAll(buffer);
+  }
+}
 
 void WebSite::_wsCleanupCallback() {
   _ws->cleanupClients(WSL_MAX_WS_CLIENTS);

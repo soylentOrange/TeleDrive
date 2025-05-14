@@ -41,7 +41,7 @@ void EventHandler::_networkStateCallback(Mycila::ESPConnect::State state) {
       webServerAPI.begin(_scheduler);
       webSite.begin(_scheduler);
       stepper.begin(_scheduler);
-      led.setMode(LED::LEDMode::IDLE);
+      led.setMode(LED::LEDMode::INITIALIZING);
       break;
 
     case Mycila::ESPConnect::State::AP_STARTED:
@@ -51,7 +51,7 @@ void EventHandler::_networkStateCallback(Mycila::ESPConnect::State state) {
       webServerAPI.begin(_scheduler);
       webSite.begin(_scheduler);
       stepper.begin(_scheduler);
-      led.setMode(LED::LEDMode::IDLE);
+      led.setMode(LED::LEDMode::INITIALIZING);
       break;
 
     case Mycila::ESPConnect::State::PORTAL_STARTED:

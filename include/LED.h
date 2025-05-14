@@ -20,6 +20,7 @@ class LED {
       NONE,
       WAITING_WIFI,
       WAITING_CAPTIVE,
+      INITIALIZING,
       ERROR,
       HOMING,
       IDLE,
