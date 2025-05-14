@@ -166,13 +166,12 @@ void Stepper::_initTMC2209() {
   _stepper_driver.enableAutomaticCurrentScaling();
   _stepper_driver.enableAutomaticGradientAdaptation();
   _stepper_driver.enableInverseMotorDirection();
+
+  // don't use StealthChop
   _stepper_driver.disableStealthChop();
 
-  // use coolStep
-  _stepper_driver.enableCoolStep(1, 1);
-  _stepper_driver.setCoolStepCurrentIncrement(TMC2209::CURRENT_INCREMENT_8);
-  _stepper_driver.setCoolStepMeasurementCount(TMC2209::MEASUREMENT_COUNT_1);
-  _stepper_driver.setCoolStepDurationThreshold(COOL_STEP_DURATION_THRESHOLD);
+  // don't use coolStep
+  _stepper_driver.disableCoolStep();
 
   // We're probably fine by now
   _driverComState = DriverComState::OK;
@@ -503,7 +502,7 @@ void Stepper::_checkMovementCallback() {
   if (position == _destination_position) {
     LOGD(TAG, "Movement Done!");
     _srStandstill.signalComplete();
-  } 
+  }
 }
 
 void Stepper::_checkStandstillCallback() {
