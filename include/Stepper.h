@@ -63,6 +63,7 @@ class Stepper {
       DRIVING,
       ARRIVED, // only temporarily
       STOPPED, // only temporarily
+      WARNING, // only temporarily
       ERROR
     };
 
@@ -76,6 +77,7 @@ class Stepper {
       {MotorState::DRIVING, "DRIVING"},
       {MotorState::ARRIVED, "ARRIVED"},
       {MotorState::STOPPED, "STOPPED"},
+      {MotorState::WARNING, "WARNING"},
       {MotorState::ERROR, "ERROR"}};
 
   public:
@@ -89,7 +91,10 @@ class Stepper {
       engine.init();
       _stepper = engine.stepperConnectToPin(TMC_STEP);
       _stepper->setDirectionPin(TMC_DIR);
-      _stepper->setAutoEnable(false);
+      _stepper->setEnablePin(TMC_EN);
+      _stepper->setAutoEnable(true);
+      _stepper->setDelayToEnable(50);
+      _stepper->setDelayToDisable(1000);
     }
     void begin(Scheduler* scheduler);
     void end();
@@ -107,8 +112,18 @@ class Stepper {
     int32_t getDestinationPosition() { return _destination_position; }
     int32_t getDestinationSpeed() { return _destination_speed; }
     int32_t getDestinationAcceleration() { return _destination_acceleration; }
+    bool getAutoHome() { return _autoHome; }
+    void setAutoHome(bool autoHome);
+    std::string getHomingState();
 
   private:
+    enum class InitializationState {
+      UNITITIALIZED,
+      GRADIENT_HOMING,   // Gradient calibration moving towards home
+      GRADIENT_HOME,     // Gradient calibration hit home
+      GRADIENT_DEHOMING, // Gradient calibration moving away from home
+      OK
+    };
     Scheduler* _scheduler = nullptr;
     TMC2209 _stepper_driver;
     FastAccelStepper* _stepper = nullptr;
@@ -129,13 +144,15 @@ class Stepper {
     Task* _diagIRQTask = nullptr;
     void _diagIRQCallback();
     StatusRequest _srHoming;
-    bool _isHoming = false;
     Task* _homingTask = nullptr;
     Task* _checkTMC2209Task = nullptr;
     void _checkTMC2209();
     void _initTMC2209();
+    void _initTMC2209Gradient(bool startAdaptation = false);
+    void _checkTMC2209Gradient();
+    void _initTMC2209Finished();
+    InitializationState _initializationState = InitializationState::UNITITIALIZED;
     bool _homed = false;
-    // TODO(me): auto-homing flag
     bool _autoHome = false;
     // position, speed, acceleration in mm, mm/s, mm/ss (current values will be gathered from TMC2209 orFastAccelStepper)
     int32_t _destination_position = 0;

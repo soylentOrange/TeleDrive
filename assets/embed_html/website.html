@@ -185,90 +185,6 @@
       white-space: pre;
     }
 
-    /* .materialColorContainer {
-      display: block;
-      aspect-ratio: 1;
-      width: 80%;
-      min-width: 50px;
-      min-height: 50px;
-      max-width: calc(100dvh - 550px) !important;
-      max-height: calc(100dvh - 550px) !important;
-      margin: auto auto 0 auto;
-    } */
-
-    /* input[type="color" i] {
-      border-radius: 50%;
-      inline-size: 100%;
-      block-size: 100%;
-      padding: 3px;
-      border-width: 1px;
-      border-style: solid;
-      border-color: rgb(153, 153, 153);
-      cursor: pointer;
-      margin: auto auto 0 auto;
-    }
-
-    input[type="color" i]::-webkit-color-swatch-wrapper {
-      padding: 1px;
-    }
-
-    input[type="color" i]::-webkit-color-swatch {
-      border-radius: 50%;
-    }
-
-    input[type="color" i]::-moz-color-swatch {
-      border-radius: 50%;
-    }
-
-    .materialColorText {
-      margin: 12px auto auto auto;
-      font-weight: bold;
-      font-size: 16px;
-      color: #36454F;
-    }
-
-    .materialWeightText {
-      margin: 0 auto 8px auto;
-      font-weight: bold;
-      font-size: 16px;
-      color: #36454F;
-    }
-
-    .weightContainer {
-      width: 100%;
-      display: flex;
-      margin: 0 auto 0 auto;
-    }
-
-    .materialContainer {
-      width: 100%;
-      display: flex;
-      flex-direction: row;
-      margin: 0 auto 0 auto;
-    }
-
-    select.materialSelect {
-      width: 100%;
-      margin: 0;
-      font-size: 16px;
-      color: #36454F;
-    }
-
-    .materialContainer>div {
-      width: 47%;
-      margin: 8px auto 8px auto;
-    }
-
-    .materialContainer>div:first-of-type {
-      margin-left: 0;
-      margin-right: auto;
-    }
-
-    .materialContainer>div:last-of-type {
-      margin-right: 0;
-      margin-left: auto;
-    } */
-
     .buttonContainer {
       width: 100%;
       display: flex;
@@ -627,26 +543,22 @@
         </div>
       </div>
       <div id="ui_settings" class="ui_main default_disabled">
-        <h2 class="not_important first"><span class="not_important first">Motor Settings</span></h2>
+        <h2 class="rather_important first"><span class="rather_important first">Homing</span></h2>
         <button id="homingBtn">Go Home</button>
-        <div class="mode_switch_first_container" id="mode_switch_container_stall">
-          <h4 id="label_stall">StallGuard</h4>
+        <div class="mode_switch_first_container" id="mode_switch_container_autoHome">
+          <h4 id="label_autoHome">Auto Home</h4>
           <div class="toggle_switch_container">
-            <input type="checkbox" class="toggle_switch_checkbox" id="toggle_switch_checkbox_stall" />
-            <label class="toggle_switch_switch" for="toggle_switch_checkbox_stall">
+            <input type="checkbox" class="toggle_switch_checkbox" id="toggle_switch_checkbox_autoHome" />
+            <label class="toggle_switch_switch" for="toggle_switch_checkbox_autoHome">
               <span class="toggle_switch_slider"></span>
             </label>
           </div>
         </div>
-        <div class="mode_switch_container" id="mode_switch_container_spread">
-          <h4 left id="label_spread">SpreadCycle</h4>
-          <div class="toggle_switch_container">
-            <input type="checkbox" class="toggle_switch_checkbox" id="toggle_switch_checkbox_spread" />
-            <label class="toggle_switch_switch" for="toggle_switch_checkbox_spread">
-              <span class="toggle_switch_slider"></span>
-            </label>
+        <div id="info_texts_homing" class="info_texts">
+          <div class="info_text_container very_important">
+            <div class="info_text_name">Homing Status:</div>
+            <div class="info_text_value informative" id="info_text_homing">Unknown</div>
           </div>
-          <h4 right id="label_stealth">StealthCop</h4>
         </div>
         <h2><span>Thingy Control</span></h2>
         <button id="restartBtn">Restart Thingy</button>
@@ -689,6 +601,7 @@
   // pre-defined svg
   const success_svg = '<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="800" height="800" fill="none" viewBox="0 0 24 24"><path fill="#0D0D0D" d="M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16M2 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10S2 17.523 2 12m14.664-3.247a1 1 0 0 1 .083 1.411l-5.333 6a1 1 0 0 1-1.495 0l-2.666-3a1 1 0 0 1 1.494-1.328l1.92 2.159 4.586-5.16a1 1 0 0 1 1.411-.082" style="fill:#16c79a;fill-opacity:1"/></svg>'
   const error_svg = '<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="800" height="800" fill="none" viewBox="0 0 24 24"><path fill="#0D0D0D" d="M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16M2 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10S2 17.523 2 12m5.793-4.207a1 1 0 0 1 1.414 0L12 10.586l2.793-2.793a1 1 0 1 1 1.414 1.414L13.414 12l2.793 2.793a1 1 0 0 1-1.414 1.414L12 13.414l-2.793 2.793a1 1 0 0 1-1.414-1.414L10.586 12 7.793 9.207a1 1 0 0 1 0-1.414" style="fill:#ec4646;fill-opacity:1"/></svg>'
+  const warning_svg = '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="800" fill="none" viewBox="0 0 24 24"><path fill="#0D0D0D" d="M11.46 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16m-10 8c0-5.523 4.477-10 10-10s10 4.477 10 10-4.477 10-10 10-10-4.477-10-10" style="fill:#f36720;fill-opacity:1"/><path fill="#0D0D0D" d="M11.46 14a1 1 0 0 1-1-1V7a1 1 0 1 1 2 0v6a1 1 0 0 1-1 1m-1.5 2.5a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0" style="fill:#f36720;fill-opacity:1"/></svg>'
 
   // common ui elements
   const help_text = document.getElementById("help_text")
@@ -718,11 +631,12 @@
   const info_text_driver = document.getElementById("info_text_driver")
   const info_text_board = document.getElementById("info_text_board")
   const info_text_build = document.getElementById("info_text_build")
-  // TODO(me): checkboxes!
-  // const beeper_checkbox = document.getElementById("toggle_switch_checkbox_beeper")
-  // const write_empty_checkbox = document.getElementById("toggle_switch_checkbox_rewrite")
-  // const clone_checkbox = document.getElementById("toggle_switch_checkbox_clone")
-  // const button_updateDb = document.getElementById("button_updateDb")
+  const autoHome_checkbox = document.getElementById("toggle_switch_checkbox_autoHome")
+  const autoHome_label = document.getElementById("label_autoHome")
+  let autoHome = false
+  const info_text_homing = document.getElementById("info_text_homing")
+
+  // TODO(me): checkbox for seizing control from ros!
 
   // ui elements - doing something with thingy
   const ui_result = document.getElementById("ui_result")
@@ -760,6 +674,7 @@
     driving: "DRIVING",
     arrived: "ARRIVED",
     stopped: "STOPPED",
+    warning: "WARNING",
     error: "ERROR",
   }
 
@@ -771,6 +686,15 @@
   }
 
   let websock_state = websock_state_enum.connecting
+
+  const homing_state_enum = {
+    homed: "OK",
+    homing: "HOMING",
+    unhomed: "UNHOMED",
+    unknown: "UNKNOWN",
+  }
+
+  let homing_state = homing_state_enum.unknown
 
   // initialize the website
   // - set up UI
@@ -853,6 +777,12 @@
       doSomethingWithThingy("/api/system/clearwifi")
     })
 
+    // event handler for clicking the auto-homing checkbox
+    autoHome_checkbox.addEventListener("change", () => {
+      autoHome = event.target.checked
+      sendConfig()
+    })
+
     // initialize websock connection
     initWebSocket()
   }
@@ -912,15 +842,28 @@
         case "initial_config":
           // this is our id...
           clientID = msg.id
-          // msg.config.origin = DISCONNECTED_CLIENT_ID
-          // onWsConfig(msg.config)
+          msg.config.origin = DISCONNECTED_CLIENT_ID
           onWsMotorState(msg.motor_state)
-          onWsMovementState(msg.move_state)
+          onWsMovementState(msg.motor_state.move_state)
+          onWsConfig(msg.config)
+          homing_state = msg.homing_state
+          switch (homing_state) {
+            case homing_state_enum.homed:
+              info_text_homing.innerText = "Homed"
+              break
+            case homing_state_enum.homing:
+              info_text_homing.innerText = "in progress..."
+              break
+            case homing_state_enum.unhomed:
+              info_text_homing.innerText = "Not Homed"
+            default:
+              info_text_homing.innerText = "Unknown"
+          }
           break
 
-        // case "config":
-        //   onWsConfig(msg)
-        //   break
+        case "config":
+          onWsConfig(msg)
+          break
 
         // position and speed updates
         case "move_state":
@@ -935,33 +878,25 @@
     }
   }
 
+  // send config to thingy
+  function sendConfig() {
+    // TODO(me): add control override for ros
+    if (clientID != DISCONNECTED_CLIENT_ID) {
+      websocket.send(JSON.stringify({
+        type: "update_config",
+        autoHome: autoHome
+      }))
+    }
+  }
+
   // got configuration via websock
   function onWsConfig(configJSON) {
-    // TODO
+    // TODO(me): add control override for ros
 
-    // StallGuard
-    // StallGuard homing
-    // CoolStep
-    // SilentStep
-
-    // if (configJSON.origin != clientID) {
-    //   beepOnRW = configJSON.beepOnRW
-    //   beeper_checkbox.checked = beepOnRW
-    //   beepAvailable = configJSON.beepAvailable
-    //   if (!beepAvailable) {
-    //     beeper_checkbox.disabled = true
-    //   }
-    //   cloneSerial = configJSON.cloneSerial
-    //   clone_checkbox.checked = cloneSerial
-    //   // check that reader is available
-    //   if (!configJSON.PN532) {
-    //     showResultContainer()
-    //     result_text.innerHTML = "Reader not available!"
-    //     result_loader.style.display = "none"
-    //     result_loader_svg.style.display = "flex"
-    //     result_loader_svg.innerHTML = error_svg
-    //   }
-    // }
+    if (configJSON.origin != clientID) {
+      autoHome = configJSON.autoHome
+      autoHome_checkbox.checked = autoHome
+    }
   }
 
   // got movement update via websock
@@ -972,16 +907,18 @@
 
   // got motor event via websock
   function onWsMotorState(stateJSON) {
-    showMotorStatus(stateJSON.state)
+    let stateChange = showMotorStatus(stateJSON.state)
 
     // show toast for some messages
     switch (stateJSON.state) {
       case motor_state_enum.idle:
-        Toastify({
-          text: "Motor:\nReady to move...",
-          duration: 3000,
-          avatar: "data:image/svg+xml;base64," + btoa(success_svg)
-        }).showToast()
+        if (stateChange) {
+          Toastify({
+            text: "Motor:\nReady to move...",
+            duration: 3000,
+            avatar: "data:image/svg+xml;base64," + btoa(success_svg)
+          }).showToast()
+        }
         if (typeof stateJSON.destination != undefined && stateJSON.origin != clientID) {
           positionSlider.value = stateJSON.destination.position
           speedSlider.value = stateJSON.destination.speed
@@ -989,6 +926,9 @@
           positionText.innerText = `${stateJSON.destination.position} mm`
           speedText.innerText = `${stateJSON.destination.speed} mm/s`
           accelerationText.innerText = `${stateJSON.destination.acceleration} mm/s²`
+        }
+        if (typeof stateJSON.move_state != undefined) {
+          onWsMovementState(stateJSON.move_state)
         }
         break
       case motor_state_enum.error:
@@ -999,11 +939,13 @@
         }).showToast()
         break
       case motor_state_enum.driving:
-        Toastify({
-          text: `Motor:\nStarted Movement`,
-          duration: 3000,
-          avatar: "data:image/svg+xml;base64," + btoa(success_svg)
-        }).showToast()
+        if (stateChange) {
+          Toastify({
+            text: `Motor:\nStarted Movement`,
+            duration: 3000,
+            avatar: "data:image/svg+xml;base64," + btoa(success_svg)
+          }).showToast()
+        }
         if (typeof stateJSON.destination != undefined && stateJSON.origin != clientID) {
           positionSlider.value = stateJSON.destination.position
           speedSlider.value = stateJSON.destination.speed
@@ -1019,6 +961,8 @@
           duration: 3000,
           avatar: "data:image/svg+xml;base64," + btoa(success_svg)
         }).showToast()
+        info_text_homing.innerText = "in progress..."
+        homing_state = homing_state_enum.homing
         if (typeof stateJSON.move_state != undefined) {
           onWsMovementState(stateJSON.move_state)
         }
@@ -1029,16 +973,20 @@
           duration: 3000,
           avatar: "data:image/svg+xml;base64," + btoa(success_svg)
         }).showToast()
+        info_text_homing.innerText = "Homed"
+        homing_state = homing_state_enum.homed
         if (typeof stateJSON.move_state != undefined) {
           onWsMovementState(stateJSON.move_state)
         }
-        break        
+        break
       case motor_state_enum.stopped:
-        Toastify({
-          text: `Motor:\nMovement Done`,
-          duration: 3000,
-          avatar: "data:image/svg+xml;base64," + btoa(success_svg)
-        }).showToast()
+        if (stateChange) {
+          Toastify({
+            text: `Motor:\nMovement Done`,
+            duration: 3000,
+            avatar: "data:image/svg+xml;base64," + btoa(success_svg)
+          }).showToast()
+        }
         if (typeof stateJSON.move_state != undefined) {
           onWsMovementState(stateJSON.move_state)
         }
@@ -1048,6 +996,13 @@
           text: `Motor:\nAlready There`,
           duration: 3000,
           avatar: "data:image/svg+xml;base64," + btoa(success_svg)
+        }).showToast()
+        break
+      case motor_state_enum.warning:
+        Toastify({
+          text: `Motor Warning:\n${stateJSON.warning}`,
+          duration: 5000,
+          avatar: "data:image/svg+xml;base64," + btoa(warning_svg)
         }).showToast()
         break
     }
@@ -1132,6 +1087,7 @@
     accelerationSlider.disabled = false
     homingBtn.disabled = false
 
+    let stateChange = motor_state != state
     motor_state = state
 
     switch (state) {
@@ -1185,6 +1141,8 @@
         accelerationSlider.disabled = true
         homingBtn.disabled = true
     }
+
+    return stateChange
   }
 
   function showWebsockStatus(state) {
@@ -1276,6 +1234,7 @@
     } else {
       showMotorStatus(motor_state)
     }
+    autoHome_checkbox.disabled = disabled
     restartBtn.disabled = disabled
     safebootBtn.disabled = disabled
     clearWifiBtn.disabled = disabled

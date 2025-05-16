@@ -74,14 +74,16 @@ void WebSite::_webSiteCallback() {
   _ws->onEvent([&](__unused AsyncWebSocket* server, AsyncWebSocketClient* client, AwsEventType type, void* arg, uint8_t* data, __unused size_t len) -> void {
     if (type == WS_EVT_CONNECT) {
       client->keepAlivePeriod(10);
-      client->setCloseClientOnQueueFull(false);
+      client->setCloseClientOnQueueFull(true);
 
       // send ID, motor_state, position, speed,...
       JsonDocument jsonMsg;
       jsonMsg["type"] = "initial_config";
       jsonMsg["id"] = client->id();
-      jsonMsg["move_state"]["position"] = stepper.getCurrentPosition();
-      jsonMsg["move_state"]["speed"] = stepper.getCurrentSpeed();
+      jsonMsg["config"]["autoHome"] = stepper.getAutoHome();
+      jsonMsg["homing_state"] = stepper.getHomingState().c_str();
+      jsonMsg["motor_state"]["move_state"]["position"] = stepper.getCurrentPosition();
+      jsonMsg["motor_state"]["move_state"]["speed"] = stepper.getCurrentSpeed();
       jsonMsg["motor_state"]["state"] = stepper.getMotorState_as_string().c_str();
       jsonMsg["motor_state"]["destination"]["position"] = stepper.getDestinationPosition();
       jsonMsg["motor_state"]["destination"]["speed"] = stepper.getDestinationSpeed();
@@ -89,10 +91,6 @@ void WebSite::_webSiteCallback() {
       AsyncWebSocketMessageBuffer* buffer = new AsyncWebSocketMessageBuffer(measureJson(jsonMsg));
       serializeJson(jsonMsg, buffer->get(), buffer->length());
       client->text(buffer);
-    } else if (type == WS_EVT_DISCONNECT) {
-      LOGD(TAG, "Client %d disconnected", client->id());
-    } else if (type == WS_EVT_ERROR) {
-      LOGD(TAG, "Client %d error", client->id());
     } else if (type == WS_EVT_DATA) {
       AwsFrameInfo* info = reinterpret_cast<AwsFrameInfo*>(arg);
       if (info->final && info->index == 0 && info->len == len) {
@@ -174,9 +172,10 @@ StatusRequest* WebSite::getStatusRequest() {
 // Handle events from motor
 // just forward the event to the website client(s)
 void WebSite::_motorEventCallback(JsonDocument doc) {
-  AsyncWebSocketMessageBuffer* buffer = new AsyncWebSocketMessageBuffer(measureJson(doc));
-  serializeJson(doc, buffer->get(), buffer->length());
+  _ws->cleanupClients(WSL_MAX_WS_CLIENTS);
   if (_ws->count()) {
+    AsyncWebSocketMessageBuffer* buffer = new AsyncWebSocketMessageBuffer(measureJson(doc));
+    serializeJson(doc, buffer->get(), buffer->length());
     _ws->textAll(buffer);
   }
 }
