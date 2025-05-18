@@ -67,6 +67,7 @@ void WebServerAPI::_webServerCallback() {
     LOGW(TAG, "Restarting!");
     auto* response = request->beginResponse(200, "text/plain", "Restarting now...");
     request->send(response);
+    stepper.end();
     Mycila::System::restart(1000);
     led.setMode(LED::LEDMode::WAITING_WIFI);
   });
@@ -77,6 +78,7 @@ void WebServerAPI::_webServerCallback() {
     if (Mycila::System::restartFactory("safeboot", 1000)) {
       auto* response = request->beginResponse(200, "text/plain", "Restarting into SafeBoot now...");
       request->send(response);
+      stepper.end();
       led.setMode(LED::LEDMode::NONE);
     } else {
       LOGW(TAG, "SafeBoot partition not found");

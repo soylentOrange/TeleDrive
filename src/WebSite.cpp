@@ -81,7 +81,7 @@ void WebSite::_webSiteCallback() {
       jsonMsg["type"] = "initial_config";
       jsonMsg["id"] = client->id();
       jsonMsg["config"]["autoHome"] = stepper.getAutoHome();
-      jsonMsg["homing_state"] = stepper.getHomingState().c_str();
+      jsonMsg["homing_state"] = stepper.getHomingState_as_string().c_str();
       jsonMsg["motor_state"]["move_state"]["position"] = stepper.getCurrentPosition();
       jsonMsg["motor_state"]["move_state"]["speed"] = stepper.getCurrentSpeed();
       jsonMsg["motor_state"]["state"] = stepper.getMotorState_as_string().c_str();
@@ -92,27 +92,31 @@ void WebSite::_webSiteCallback() {
       serializeJson(jsonMsg, buffer->get(), buffer->length());
       client->text(buffer);
     } else if (type == WS_EVT_DATA) {
-      AwsFrameInfo* info = reinterpret_cast<AwsFrameInfo*>(arg);
-      if (info->final && info->index == 0 && info->len == len) {
-        if (info->opcode == WS_TEXT) {
-          data[len] = 0;
-        }
-        // pong on client keep-alive message
-        if (strcmp(reinterpret_cast<char*>(data), "ping") == 0) {
-          // LOGD(TAG, "Client %d pinged us", client->id());
-          client->text("pong");
-        } else { // some message is received
-          JsonDocument jsonRXMsg;
-          DeserializationError error = deserializeJson(jsonRXMsg, reinterpret_cast<char*>(data));
-          if (error == DeserializationError::Ok) {
-            // ...pass command to stepper and let it decide...
-            if (_webEventCallback != nullptr) {
-              _webEventCallback(jsonRXMsg);
-            } else {
-              LOGE(TAG, "No event listener (_webEventCallback) available!");
+      // Try handling the data
+      try {
+        AwsFrameInfo* info = reinterpret_cast<AwsFrameInfo*>(arg);
+        if (info->final && info->index == 0 && info->len == len) {
+          if (info->opcode == WS_TEXT) {
+            data[len] = 0;
+          }
+          // pong on client keep-alive message
+          if (strcmp(reinterpret_cast<char*>(data), "ping") == 0) {
+            client->text("pong");
+          } else { // some message is received
+            JsonDocument jsonRXMsg;
+            DeserializationError error = deserializeJson(jsonRXMsg, reinterpret_cast<char*>(data));
+            if (error == DeserializationError::Ok) {
+              // ...pass command to stepper and let it decide...
+              if (_webEventCallback != nullptr) {
+                _webEventCallback(jsonRXMsg);
+              } else {
+                LOGE(TAG, "No event listener (_webEventCallback) available!");
+              }
             }
           }
         }
+      } catch (const std::exception& e) {
+        LOGE(TAG, "Exception occured while processing WS data!");
       }
     }
   });
@@ -162,11 +166,6 @@ void WebSite::_webSiteCallback() {
 
   _sr.signalComplete();
   LOGD(TAG, "...done!");
-}
-
-// get StatusRequest object for initializing task
-StatusRequest* WebSite::getStatusRequest() {
-  return &_sr;
 }
 
 // Handle events from motor

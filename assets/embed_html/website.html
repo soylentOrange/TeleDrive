@@ -543,7 +543,7 @@
         </div>
       </div>
       <div id="ui_settings" class="ui_main default_disabled">
-        <h2 class="rather_important first"><span class="rather_important first">Homing</span></h2>
+        <h2 class="rather_important first"><span class="rather_important first">Homing Control</span></h2>
         <button id="homingBtn">Go Home</button>
         <div class="mode_switch_first_container" id="mode_switch_container_autoHome">
           <h4 id="label_autoHome">Auto Home</h4>
@@ -799,7 +799,7 @@
     }, 3000)
     help_text.innerHTML = "Connecting..."
     showWebsockStatus(websock_state_enum.connecting)
-    showMotorStatus(motor_state_enum.unknown)
+    showMotorState(motor_state_enum.unknown)
     websocket = new WebSocket(gateway)
     websocket.onopen = onOpen
     websocket.onclose = onClose
@@ -907,7 +907,7 @@
 
   // got motor event via websock
   function onWsMotorState(stateJSON) {
-    let stateChange = showMotorStatus(stateJSON.state)
+    let stateChange = showMotorState(stateJSON.state)
 
     // show toast for some messages
     switch (stateJSON.state) {
@@ -961,8 +961,7 @@
           duration: 3000,
           avatar: "data:image/svg+xml;base64," + btoa(success_svg)
         }).showToast()
-        info_text_homing.innerText = "in progress..."
-        homing_state = homing_state_enum.homing
+        showHomingState(homing_state_enum.homing)
         if (typeof stateJSON.move_state != undefined) {
           onWsMovementState(stateJSON.move_state)
         }
@@ -973,8 +972,7 @@
           duration: 3000,
           avatar: "data:image/svg+xml;base64," + btoa(success_svg)
         }).showToast()
-        info_text_homing.innerText = "Homed"
-        homing_state = homing_state_enum.homed
+        showHomingState(homing_state_enum.homed)
         if (typeof stateJSON.move_state != undefined) {
           onWsMovementState(stateJSON.move_state)
         }
@@ -1041,7 +1039,27 @@
     }
   }
 
-  function showROSStatus(state) {
+  // show (and possibly update) homind state in the ui
+  function showHomingState(state) {
+    if (typeof state != undefined) {
+      homing_state = state
+    }
+    
+    switch (homing_state) {
+      case homing_state_enum.homed:
+        info_text_homing.innerText = "Homed"
+        break
+      case homing_state_enum.homing:
+        info_text_homing.innerText = "in progress..."
+        break
+      case homing_state_enum.unhomed:
+        info_text_homing.innerText = "Not Homed"
+      default:
+        info_text_homing.innerText = "Unknown"
+    }
+  }
+
+  function showROSState(state) {
     const statusROSUnknown = document.getElementById("statusROSUnknown")
     const statusROSConnecting = document.getElementById("statusROSConnecting")
     const statusROSConnected = document.getElementById("statusROSConnected")
@@ -1069,7 +1087,7 @@
     }
   }
 
-  function showMotorStatus(state) {
+  function showMotorState(state) {
     const statusMotorUnknown = document.getElementById("statusMotorUnknown")
     const statusMotorIdle = document.getElementById("statusMotorIdle")
     const statusMotorHoming = document.getElementById("statusMotorHoming")
@@ -1232,7 +1250,7 @@
       accelerationSlider.disabled = true
       homingBtn.disabled = true
     } else {
-      showMotorStatus(motor_state)
+      showMotorState(motor_state)
     }
     autoHome_checkbox.disabled = disabled
     restartBtn.disabled = disabled

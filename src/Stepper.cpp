@@ -25,9 +25,10 @@ void Stepper::begin(Scheduler* scheduler) {
   _diagIRQTask = new Task(TASK_IMMEDIATE, TASK_FOREVER, [&] { _diagIRQCallback(); }, _scheduler, false, NULL, NULL, true);
   _diagIRQTask->enable();
   _diagIRQTask->waitFor(&_srDiag);
+  _movementDirection = MotorDirection::STANDSTILL;
 
   // Set up IRQ for homing button
-  pinMode(TMC_HOME, INPUT_PULLUP);
+  pinMode(TMC_HOME, INPUT);
   attachInterrupt(TMC_HOME, [&] { _isrHome(); }, FALLING);
   // create and run a task for for getting home button presses
   _homingIRQTask = new Task(TASK_IMMEDIATE, TASK_FOREVER, [&] { _homingIRQCallback(); }, _scheduler, false, NULL, NULL, true);
@@ -38,7 +39,7 @@ void Stepper::begin(Scheduler* scheduler) {
   LOGD(TAG, "register event handler to website");
   webSite.listenWebEvent([&](JsonDocument doc) { _webEventCallback(doc); });
 
-  // TODO(me): handle persistent options (auto homing...)
+  // handle persistent options (auto homing...)
   LOGD(TAG, "Get persistent options from preferences...");
   Preferences preferences;
   preferences.begin("tdrive", true);
@@ -85,29 +86,34 @@ void Stepper::end() {
 
   // software-disable the driver
   _stepper_driver.disable();
+
+  // possibly stop an ongoing movement
+  _stepper->forceStop();
+  _movementDirection = MotorDirection::STANDSTILL;
 }
 
 // callback when homing button was hit
 void Stepper::_homingIRQCallback() {
   // Stop the current movement, when moving towards home
-  if (_movementDirection == DECREASING) {
-    // ALWAYS stop and always remember that we hit the home button, adding a safety margin
+  if (_movementDirection == MotorDirection::BACKWARDS) {
+    // ALWAYS stop and always remember that we hit the home button
+    // adding a safety margin 0f 0.5mm
     _stepper->forceStopAndNewPosition(-STEPS_PER_MM / 2);
     _homed = true;
     _destination_position = 0;
-    _movementDirection == INCREASING;
+    _movementDirection = MotorDirection::STANDSTILL;
     _stepper->moveTo(0);
 
     // we're initializing right now
     if (_initializationState == InitializationState::GRADIENT_HOMING) {
-      _stepper->forceStopAndNewPosition(0);
       _initializationState = InitializationState::GRADIENT_HOME;
-      LOGD(TAG, "Hit Home while initializing");
+      LOGI(TAG, "Hit Home while initializing");
     } else { // Initialization is probably done already
       // Yeah, homing is done!
       if (_motorState == MotorState::HOMING) {
-        LOGD(TAG, "Hit Home while homing");
+        LOGI(TAG, "Hit Home while homing");
         _motorState = MotorState::IDLE;
+        _movementDirection = MotorDirection::STANDSTILL;
         led.setMode(LED::LEDMode::IDLE);
 
         // send websock event
@@ -121,7 +127,7 @@ void Stepper::_homingIRQCallback() {
           _motorEventCallback(jsonMsg);
         }
       } else if (_motorState == MotorState::DRIVING) {
-        LOGD(TAG, "Hit Home while driving");
+        LOGW(TAG, "Hit Home while driving");
         // bring the motor to halt now
         _srStandstill.signalComplete();
       }
@@ -134,9 +140,7 @@ void Stepper::_homingIRQCallback() {
 }
 
 void Stepper::_diagIRQCallback() {
-  LOGI(TAG, "Diag event occurred");
-
-  // find, what happened
+  // find what happened
   if (!_stepper_driver.isCommunicating()) {
     _driverComState = DriverComState::ERROR;
     _motorState = MotorState::ERROR;
@@ -152,8 +156,36 @@ void Stepper::_diagIRQCallback() {
       jsonMsg.shrinkToFit();
       _motorEventCallback(jsonMsg);
     }
-  } // else if ()
-  // TODO(me): add diagnostics
+  } else {
+    // Get global status of TMC2209
+    TMC2209::GlobalStatus globalStatus = _stepper_driver.getGlobalStatus();
+    if (globalStatus.uv_cp) {
+      LOGW(TAG, "Charge pump under-voltage");
+    } else if (globalStatus.drv_err) {
+      // Some error has occurred...
+      TMC2209::Status status = _stepper_driver.getStatus();
+      if (status.low_side_short_a) {
+        LOGW(TAG, "low_side_short_a");
+      } else if (status.low_side_short_b) {
+        LOGW(TAG, "low_side_short_b");
+      } else if (status.open_load_a) {
+        LOGW(TAG, "open_load_a");
+      } else if (status.open_load_b) {
+        LOGW(TAG, "open_load_b");
+      } else if (status.short_to_ground_a) {
+        LOGW(TAG, "short_to_ground_a");
+      } else if (status.short_to_ground_b) {
+        LOGW(TAG, "short_to_ground_b");
+      } else if (status.over_temperature_warning) {
+        LOGW(TAG, "over_temperature_warning");
+      } else if (status.over_temperature_shutdown) {
+        LOGW(TAG, "over_temperature_shutdown");
+      }
+    } else if (digitalRead(TMC_EN)) {
+      LOGW(TAG, "Motor is hardware-disabled");
+    }
+  }
+  // TODO(me): handle diagnostics
 
   // Wait for the next event...
   _srDiag.setWaiting();
@@ -161,7 +193,7 @@ void Stepper::_diagIRQCallback() {
 }
 
 void Stepper::setAutoHome(bool autoHome) {
-  LOGD(TAG, "AutoHome should be: %s", autoHome ? "On" : "Off");
+  LOGI(TAG, "AutoHoming: %s", autoHome ? "On" : "Off");
   // save if value differs from known
   if (_autoHome != autoHome) {
     _autoHome = autoHome;
@@ -175,25 +207,55 @@ void Stepper::setAutoHome(bool autoHome) {
 // final part of initialization
 void Stepper::_initTMC2209Finished() {
   LOGD(TAG, "Final pwmAutoScale: %d", _stepper_driver.getPwmScaleAuto());
-  // activate StealthChop for speed below 10mm/s
-  _stepper_driver.setStealthChopDurationThreshold(188);
-  _stepper_driver.enableStealthChop();
-  //_stepper_driver.setStallGuardThreshold(0);
-
   // Hardware-disable the motor
   digitalWrite(TMC_EN, HIGH);
+  // Software-disable TMC2209
+  _stepper_driver.disable();
+
+  // activate StealthChop
+  _stepper_driver.setStealthChopDurationThreshold(STEALTHCHOP_THRSH);
+  _stepper_driver.enableStealthChop();
+
+  // deactivate CoolStep
+  _stepper_driver.setCoolStepDurationThreshold(STEALTHCHOP_THRSH + 1);
+  _stepper_driver.disableCoolStep();
+
+  // set power saving standstill mode
+  _stepper_driver.setStandstillMode(TMC2209::StandstillMode::BRAKING);
+
+  // software-enable TMC2209
+  _stepper_driver.enable();
   _stepper->setAutoEnable(true);
 
-  // We're probably fine by now
-  _initializationState = InitializationState::OK;
-  _driverComState = DriverComState::OK;
-  _motorState = MotorState::IDLE;
-  led.setMode(LED::LEDMode::IDLE);
-  // software-enable the driver
-  _stepper_driver.enable();
-  LOGI(TAG, "Stepper driver is probably setup and communicating!");
+  // Final check of driver
+  if (_stepper_driver.isSetupAndCommunicating()) {
+    LOGI(TAG, "Stepper driver is setup and communicating!");
+    _initializationState = InitializationState::OK;
+    _driverComState = DriverComState::OK;
+    _motorState = MotorState::IDLE;
+    led.setMode(LED::LEDMode::IDLE);
+  } else {
+    LOGE(TAG, "Stepper driver setup failed!");
+    _stepper->setAutoEnable(false);
+    _initializationState = InitializationState::UNITITIALIZED;
+    _driverComState = DriverComState::ERROR;
+    _motorState = MotorState::ERROR;
+    led.setMode(LED::LEDMode::ERROR);
 
-  // do power-on homing
+    // execute callback (from website)
+    if (_motorEventCallback != nullptr) {
+      JsonDocument jsonMsg;
+      jsonMsg["type"] = "motor_state";
+      jsonMsg["state"] = getMotorState_as_string().c_str();
+      jsonMsg.shrinkToFit();
+      _motorEventCallback(jsonMsg);
+    }
+
+    // bail out, the check-Task might be able to recover from this mess!
+    return;
+  }
+
+  // possibly do power-on homing
   if (!_homed && _autoHome) {
     do_homing();
   } else {
@@ -208,20 +270,13 @@ void Stepper::_initTMC2209Finished() {
       _motorEventCallback(jsonMsg);
     }
   }
-
-  // Set up a task for continuously monitoring the driver
-  if (_checkTMC2209Task == nullptr) {
-    LOGD(TAG, "starting _checkTMC2209Task");
-    _checkTMC2209Task = new Task(1000, TASK_FOREVER, [&] { _checkTMC2209(); }, _scheduler, false, NULL, NULL, true);
-    _checkTMC2209Task->enable();
-  }
 }
 
 // gradient calibration callback
 void Stepper::_checkTMC2209Gradient() {
   int16_t pwmAutoScale = _stepper_driver.getPwmScaleAuto();
   LOGD(TAG, "Check pwmAutoScale: %d", pwmAutoScale);
-  if (abs(pwmAutoScale) < 50) {
+  if (abs(pwmAutoScale) < 10) {
     _initTMC2209Finished();
   } else {
     // Try again in half a second
@@ -233,21 +288,21 @@ void Stepper::_checkTMC2209Gradient() {
 // gradient calibration callback
 void Stepper::_initTMC2209Gradient(bool startAdaptation) {
   // set movement speed to 250 rpm
-  _stepper->setSpeedInMilliHz(HOMING_SPEED_STEPPER);
+  _stepper->setSpeedInMilliHz(HOMING_SPEED);
 
-  // set acceleration to max
-  _stepper->setAcceleration(STEPS_PER_MM * 1600);
+  // set acceleration
+  _stepper->setAcceleration(HOMING_ACCELERATION);
 
   // we're at the homing button, move 3 mm away from home
   if ((_initializationState == InitializationState::GRADIENT_HOME) || !digitalRead(TMC_HOME)) {
-    _movementDirection == INCREASING;
+    _movementDirection = MotorDirection::FORWARDS;
     _initializationState = InitializationState::GRADIENT_DEHOMING;
     _stepper->move(3 * STEPS_PER_MM);
     // Wait for 500 ms and check result
     Task* optimizeGradientDeHomingTask = new Task(TASK_IMMEDIATE, TASK_ONCE, [&] { _checkTMC2209Gradient(); }, _scheduler, false, NULL, NULL, true);
     optimizeGradientDeHomingTask->enableDelayed(500);
   } else { // just move 2 mm towards home
-    _movementDirection == DECREASING;
+    _movementDirection = MotorDirection::BACKWARDS;
     _initializationState = InitializationState::GRADIENT_HOMING;
     _stepper->move(-2 * STEPS_PER_MM);
     // Wait for 500 ms and check result
@@ -264,8 +319,54 @@ void Stepper::_initTMC2209Gradient(bool startAdaptation) {
 
 // Initial part of initialization
 void Stepper::_initTMC2209() {
-  LOGI(TAG, "Running TMC2209 setup%s", _driverComState == DriverComState::UNKNOWN ? "..." : " again!");
+  // possibly delay initialization if network isn't connected to WiFi
+  // like programming...
+  if (eventHandler.getStatusRequest()->pending()) {
+    LOGI(TAG, "Delay TMC2209 setup");
+    Task* initDelayedTMC2209Task = new Task(TASK_IMMEDIATE, TASK_ONCE, [&] { _initTMC2209(); }, _scheduler, false, NULL, NULL, true);
+    initDelayedTMC2209Task->enable();
+    initDelayedTMC2209Task->waitFor(eventHandler.getStatusRequest());
+    return;
+  }
+
+  // Reflect state
+  _driverComState = DriverComState::UNKNOWN;
+  _motorState = MotorState::UNINITIALIZED;
+  _initializationState = InitializationState::UNITITIALIZED;
+  led.setMode(LED::LEDMode::INITIALIZING);
+
+  // Start communication with driver
   _stepper_driver.setup(Serial1, 115200, TMC2209::SerialAddress::SERIAL_ADDRESS_0, TMC_RX, TMC_TX);
+
+  // Check if the driver is responding, otherwise the power might have failed
+  if (!_stepper_driver.isCommunicating()) {
+    LOGW(TAG, "Driver is not communicating, delay initialization");
+    _driverComState = DriverComState::ERROR;
+    led.setMode(LED::LEDMode::ERROR);
+
+    // execute callback (from website)
+    if (_motorEventCallback != nullptr) {
+      JsonDocument jsonMsg;
+      jsonMsg["type"] = "motor_state";
+      jsonMsg["state"] = getMotorState_as_string().c_str();
+      jsonMsg.shrinkToFit();
+      _motorEventCallback(jsonMsg);
+    }
+
+    // delay initialization if driver is not communicating, yet
+    Task* initDelayedStartupTMC2209Task = new Task(TASK_IMMEDIATE, TASK_ONCE, [&] { _initTMC2209(); }, _scheduler, false, NULL, NULL, true);
+    initDelayedStartupTMC2209Task->enableDelayed(1000);
+    return;
+  }
+
+  // Set up a task for continuously monitoring the driver
+  if (_checkTMC2209Task == nullptr) {
+    LOGD(TAG, "starting _checkTMC2209Task");
+    _checkTMC2209Task = new Task(1000, TASK_FOREVER, [&] { _checkTMC2209(); }, _scheduler, false, NULL, NULL, true);
+    _checkTMC2209Task->enableDelayed(1000);
+  }
+
+  LOGI(TAG, "Running TMC2209 setup%s", _driverComState == DriverComState::UNKNOWN ? "..." : " again!");
   // 16 µSteps & 1.8°/per step --> 3200 (200*16) µSteps per rev --> with 8mm pitch --> 400 µSteps per mm
   _stepper_driver.setMicrostepsPerStep(USTEPS_PER_STEP);
 
@@ -274,7 +375,8 @@ void Stepper::_initTMC2209() {
   // calculated for: [E Series Nema 17 Stepper 2A 55Ncm 1.8°](https://www.omc-stepperonline.com/e-series-nema-17-bipolar-55ncm-77-88oz-in-2a-42x48mm-4-wires-w-1m-cable-connector-17he19-2004s)
   // using the [TMC2209 Calculator](https://www.analog.com/media/en/engineering-tools/design-tools/tmc2209_calculations.xlsx)
   _stepper_driver.setRMSCurrent(1414, 0.11);
-  _stepper_driver.setStandstillMode(TMC2209::StandstillMode::BRAKING);
+  // set standstill mode to use IHOLD for calibration
+  _stepper_driver.setStandstillMode(TMC2209::StandstillMode::NORMAL);
   _stepper_driver.enableInverseMotorDirection();
 
   // enable StealthChop for initialization
@@ -500,9 +602,9 @@ void Stepper::start_move(int32_t position, int32_t speed, int32_t acceleration, 
 
   // in which direction is the upcoming movement?
   if (_destination_position * STEPS_PER_MM > _stepper->getCurrentPosition()) {
-    _movementDirection = INCREASING;
+    _movementDirection = MotorDirection::FORWARDS;
   } else {
-    _movementDirection = DECREASING;
+    _movementDirection = MotorDirection::BACKWARDS;
   }
 
   // configure FastAccelStepper
@@ -583,6 +685,7 @@ void Stepper::halt_move() {
   _stepper->setAcceleration(1600 * STEPS_PER_MM);
   _stepper->applySpeedAcceleration();
   _stepper->stopMove();
+  _movementDirection = MotorDirection::STANDSTILL;
 
   // Forcefully stop driving operation
   if (_motorState == MotorState::DRIVING) {
@@ -612,11 +715,12 @@ void Stepper::do_homing() {
 
   // Check if we are already at home position
   if (!digitalRead(TMC_HOME)) {
-    LOGD(TAG, "Homing not required - already there!");
+    LOGI(TAG, "Homing not required - already there!");
     // Set position to 0 anyways...
-    _stepper->setCurrentPosition(-STEPS_PER_MM/2);
-    _stepper->setAcceleration(1600 * STEPS_PER_MM);
-    _stepper->setSpeedInMilliHz(HOMING_SPEED_STEPPER);
+    _movementDirection = MotorDirection::STANDSTILL;
+    _stepper->setCurrentPosition(-STEPS_PER_MM / 2);
+    _stepper->setAcceleration(HOMING_ACCELERATION);
+    _stepper->setSpeedInMilliHz(HOMING_SPEED);
     _stepper->moveTo(0);
     _homed = true;
     _destination_position = 0;
@@ -648,16 +752,16 @@ void Stepper::do_homing() {
       _motorEventCallback(jsonMsg);
     }
 
-    LOGD(TAG, "Start Regular Homing");
-    _movementDirection = DECREASING;
+    LOGI(TAG, "Start Regular Homing");
     // move at 250 rpm toward the homing button
-    _stepper->setAcceleration(1600 * STEPS_PER_MM);
-    _stepper->setSpeedInMilliHz(HOMING_SPEED_STEPPER);
+    _movementDirection = MotorDirection::BACKWARDS;
+    _stepper->setAcceleration(HOMING_ACCELERATION);
+    _stepper->setSpeedInMilliHz(HOMING_SPEED);
     _stepper->runBackward();
   }
 }
 
-std::string Stepper::getHomingState() {
+std::string Stepper::getHomingState_as_string() {
   if (_homed) {
     return std::string("OK");
   } else if (_motorState == MotorState::HOMING) {
@@ -707,6 +811,7 @@ void Stepper::_checkStandstillCallback() {
     _motorEventCallback(jsonMsg);
   }
 
+  _movementDirection = MotorDirection::STANDSTILL;
   _motorState = MotorState::IDLE;
   led.setMode(LED::LEDMode::IDLE);
 }

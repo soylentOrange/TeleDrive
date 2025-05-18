@@ -80,6 +80,24 @@ class Stepper {
       {MotorState::WARNING, "WARNING"},
       {MotorState::ERROR, "ERROR"}};
 
+    std::map<MotorState, LED::LEDMode> MotorState_LEDMode_map = {
+      {MotorState::UNKNOWN, LED::LEDMode::INITIALIZING},
+      {MotorState::UNINITIALIZED, LED::LEDMode::INITIALIZING},
+      {MotorState::IDLE, LED::LEDMode::IDLE},
+      {MotorState::HOMING, LED::LEDMode::HOMING},
+      {MotorState::HOMED, LED::LEDMode::IDLE},
+      {MotorState::DRIVING, LED::LEDMode::DRIVING},
+      {MotorState::ARRIVED, LED::LEDMode::IDLE},
+      {MotorState::STOPPED, LED::LEDMode::IDLE},
+      {MotorState::WARNING, LED::LEDMode::IDLE},
+      {MotorState::ERROR, LED::LEDMode::ERROR}};
+
+    enum class MotorDirection {
+      FORWARDS,
+      BACKWARDS,
+      STANDSTILL
+    };
+
   public:
     Stepper() {
       _srHome.setWaiting();
@@ -104,6 +122,7 @@ class Stepper {
     std::string getComState_as_string() { return DriverComState_string_map[_driverComState]; }
     MotorState getMotorState() { return _motorState; }
     std::string getMotorState_as_string() { return MotorState_string_map[_motorState]; }
+    LED::LEDMode getMotorState_as_LEDMode() { return MotorState_LEDMode_map[_motorState]; }
     void start_move(int32_t position, int32_t speed, int32_t acceleration, int32_t clientID = -1);
     void halt_move();
     void do_homing();
@@ -114,7 +133,7 @@ class Stepper {
     int32_t getDestinationAcceleration() { return _destination_acceleration; }
     bool getAutoHome() { return _autoHome; }
     void setAutoHome(bool autoHome);
-    std::string getHomingState();
+    std::string getHomingState_as_string();
 
   private:
     enum class InitializationState {
@@ -154,11 +173,12 @@ class Stepper {
     InitializationState _initializationState = InitializationState::UNITITIALIZED;
     bool _homed = false;
     bool _autoHome = false;
-    // position, speed, acceleration in mm, mm/s, mm/ss (current values will be gathered from TMC2209 orFastAccelStepper)
+    // position, speed, acceleration in mm, mm/s, mm/ss
+    // (current values will be gathered from FastAccelStepper on demand)
     int32_t _destination_position = 0;
     int32_t _destination_speed = 0;
     int32_t _destination_acceleration = 0;
-    bool _movementDirection = DECREASING;
+    MotorDirection _movementDirection = MotorDirection::STANDSTILL;
     Task* _checkMovementTask = nullptr;
     void _checkMovementCallback();
     void _checkStandstillCallback();

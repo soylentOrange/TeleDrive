@@ -12,14 +12,16 @@
 
 class EventHandler {
   public:
-    explicit EventHandler(ESPNetwork& espNetwork) : _espNetwork(&espNetwork) {}
+    explicit EventHandler(ESPNetwork& espNetwork) : _espNetwork(&espNetwork) { _srConnected.setWaiting(); }
     void begin(Scheduler* scheduler);
     void end();
     Mycila::ESPConnect::State getNetworkState();
+    StatusRequest* getStatusRequest() { return &_srConnected; }
 
   private:
     void _networkStateCallback(Mycila::ESPConnect::State state);
     Mycila::ESPConnect::State _networkState = Mycila::ESPConnect::State::NETWORK_DISABLED;
     Scheduler* _scheduler = nullptr;
     ESPNetwork* _espNetwork = nullptr;
+    StatusRequest _srConnected;
 };

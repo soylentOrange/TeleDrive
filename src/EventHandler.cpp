@@ -11,6 +11,7 @@ void EventHandler::begin(Scheduler* scheduler) {
 
   // Task handling
   _scheduler = scheduler;
+  _srConnected.setWaiting();
 
   // Register Callback to espConnect
   _espNetwork->getESPConnect()->listen([&](__unused Mycila::ESPConnect::State previous, Mycila::ESPConnect::State state) {
@@ -24,6 +25,7 @@ void EventHandler::end() {
   LOGW(TAG, "Disabling EventHandler...");
   _espNetwork->getESPConnect()->listen(nullptr);
   _networkState = Mycila::ESPConnect::State::NETWORK_DISABLED;
+  _srConnected.setWaiting();
 }
 
 Mycila::ESPConnect::State EventHandler::getNetworkState() {
@@ -38,36 +40,30 @@ void EventHandler::_networkStateCallback(Mycila::ESPConnect::State state) {
     case Mycila::ESPConnect::State::NETWORK_CONNECTED:
       LOGI(TAG, "--> Connected to network...");
       LOGI(TAG, "IPAddress: %s", _espNetwork->getESPConnect()->getIPAddress().toString().c_str());
-      webServerAPI.begin(_scheduler);
-      webSite.begin(_scheduler);
-      stepper.begin(_scheduler);
-      led.setMode(LED::LEDMode::INITIALIZING);
+      led.setMode(stepper.getMotorState_as_LEDMode());
+      _srConnected.signalComplete();
       break;
 
     case Mycila::ESPConnect::State::AP_STARTED:
       LOGI(TAG, "--> Created AP...");
       LOGI(TAG, "SSID: %s", _espNetwork->getESPConnect()->getAccessPointSSID().c_str());
       LOGI(TAG, "IPAddress: %s", _espNetwork->getESPConnect()->getIPAddress().toString().c_str());
-      webServerAPI.begin(_scheduler);
-      webSite.begin(_scheduler);
-      stepper.begin(_scheduler);
-      led.setMode(LED::LEDMode::INITIALIZING);
+      led.setMode(stepper.getMotorState_as_LEDMode());
+      _srConnected.signalComplete();
       break;
 
     case Mycila::ESPConnect::State::PORTAL_STARTED:
       LOGI(TAG, "--> Started Captive Portal...");
       LOGI(TAG, "SSID: %s", _espNetwork->getESPConnect()->getAccessPointSSID().c_str());
       LOGI(TAG, "IPAddress: %s", _espNetwork->getESPConnect()->getIPAddress().toString().c_str());
-      webServerAPI.begin(_scheduler);
       led.setMode(LED::LEDMode::WAITING_CAPTIVE);
+      _srConnected.setWaiting();
       break;
 
     case Mycila::ESPConnect::State::NETWORK_DISCONNECTED:
       LOGI(TAG, "--> Disconnected from network...");
       led.setMode(LED::LEDMode::WAITING_WIFI);
-      stepper.end();
-      webSite.end();
-      webServerAPI.end();
+      _srConnected.setWaiting();
       break;
 
     case Mycila::ESPConnect::State::PORTAL_COMPLETE: {
@@ -77,6 +73,7 @@ void EventHandler::_networkStateCallback(Mycila::ESPConnect::State state) {
       LOGD(TAG, "wifiSSID: %s", config.wifiSSID.c_str());
       LOGD(TAG, "wifiPassword: %s", config.wifiPassword.c_str());
       led.setMode(LED::LEDMode::WAITING_WIFI);
+      _srConnected.setWaiting();
       break;
     }
 

@@ -16,7 +16,7 @@ class WebSite {
     void end();
     typedef std::function<void(JsonDocument doc)> WebEventCallback;
     void listenWebEvent(WebEventCallback callback) { _webEventCallback = callback; }
-    StatusRequest* getStatusRequest();
+    StatusRequest* getStatusRequest() { return &_sr; }
 
   private:
     void _webSiteCallback();

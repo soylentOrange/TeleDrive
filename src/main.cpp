@@ -58,8 +58,16 @@ void setup() {
   espNetwork.begin(&scheduler);
 
   // Add EventHandler to Scheduler
-  // Will also spawn the WebServerAPI and WebSite (when ESPConnect says so...)
   eventHandler.begin(&scheduler);
+
+  // Add WebServerAPI to Scheduler
+  webServerAPI.begin(&scheduler);
+
+  // Add WebSite to Scheduler
+  webSite.begin(&scheduler);
+
+  // Add Stepper to Scheduler
+  stepper.begin(&scheduler);
 }
 
 void loop() {
