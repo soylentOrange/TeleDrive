@@ -80,6 +80,7 @@ class Stepper {
       {MotorState::WARNING, "WARNING"},
       {MotorState::ERROR, "ERROR"}};
 
+    // Map MotorState to LEDState
     std::map<MotorState, LED::LEDMode> MotorState_LEDMode_map = {
       {MotorState::UNKNOWN, LED::LEDMode::INITIALIZING},
       {MotorState::UNINITIALIZED, LED::LEDMode::INITIALIZING},
@@ -96,6 +97,14 @@ class Stepper {
       FORWARDS,
       BACKWARDS,
       STANDSTILL
+    };
+
+    enum class InitializationState {
+      UNITITIALIZED,
+      GRADIENT_HOMING,   // Gradient calibration moving towards home
+      GRADIENT_HOME,     // Gradient calibration hit home
+      GRADIENT_DEHOMING, // Gradient calibration moving away from home
+      OK
     };
 
   public:
@@ -136,13 +145,6 @@ class Stepper {
     std::string getHomingState_as_string();
 
   private:
-    enum class InitializationState {
-      UNITITIALIZED,
-      GRADIENT_HOMING,   // Gradient calibration moving towards home
-      GRADIENT_HOME,     // Gradient calibration hit home
-      GRADIENT_DEHOMING, // Gradient calibration moving away from home
-      OK
-    };
     Scheduler* _scheduler = nullptr;
     TMC2209 _stepper_driver;
     FastAccelStepper* _stepper = nullptr;
@@ -170,6 +172,9 @@ class Stepper {
     void _initTMC2209Gradient(bool startAdaptation = false);
     void _checkTMC2209Gradient();
     void _initTMC2209Finished();
+    void _reInitTMC2209();
+    uint8_t _pwmGradient = 0;
+    uint8_t _pwmOffset = 0;
     InitializationState _initializationState = InitializationState::UNITITIALIZED;
     bool _homed = false;
     bool _autoHome = false;

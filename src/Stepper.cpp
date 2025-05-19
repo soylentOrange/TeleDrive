@@ -204,6 +204,79 @@ void Stepper::setAutoHome(bool autoHome) {
   }
 }
 
+// re-Initialization
+void Stepper::_reInitTMC2209() {
+  LOGI(TAG, "Running TMC2209 re-initialization routine...");
+  // 16 µSteps & 1.8°/per step --> 3200 (200*16) µSteps per rev --> with 8mm pitch --> 400 µSteps per mm
+  _stepper_driver.setMicrostepsPerStep(USTEPS_PER_STEP);
+
+  // configure TMC
+  _stepper_driver.useExternalSenseResistors();
+  // calculated for: [E Series Nema 17 Stepper 2A 55Ncm 1.8°](https://www.omc-stepperonline.com/e-series-nema-17-bipolar-55ncm-77-88oz-in-2a-42x48mm-4-wires-w-1m-cable-connector-17he19-2004s)
+  // using the [TMC2209 Calculator](https://www.analog.com/media/en/engineering-tools/design-tools/tmc2209_calculations.xlsx)
+  _stepper_driver.setRMSCurrent(1414, 0.11);
+
+  // activate StealthChop
+  _stepper_driver.setStealthChopDurationThreshold(STEALTHCHOP_THRSH);
+  _stepper_driver.enableStealthChop();
+
+  // deactivate CoolStep
+  _stepper_driver.setCoolStepDurationThreshold(STEALTHCHOP_THRSH + 1);
+  _stepper_driver.disableCoolStep();
+
+  // set power saving standstill mode
+  _stepper_driver.setStandstillMode(TMC2209::StandstillMode::BRAKING);
+
+  // don't use stall guard
+  _stepper_driver.setStallGuardThreshold(0);
+
+  // set the known values for gradient and offset
+  _stepper_driver.setPwmGradient(_pwmGradient);
+  _stepper_driver.setPwmOffset(_pwmOffset);
+  _stepper_driver.enableAutomaticCurrentScaling();
+  _stepper_driver.enableAutomaticGradientAdaptation();
+
+  // software-enable TMC2209
+  _stepper_driver.enable();
+  // Hardware-disable the motor
+  digitalWrite(TMC_EN, HIGH);
+  _stepper->setAutoEnable(true);
+
+  // Final check of driver
+  if (_stepper_driver.isSetupAndCommunicating()) {
+    LOGI(TAG, "Stepper driver is setup and communicating!");
+    _initializationState = InitializationState::OK;
+    _driverComState = DriverComState::OK;
+    _motorState = MotorState::IDLE;
+    led.setMode(LED::LEDMode::IDLE);
+
+    // execute callback (from website)
+    if (_motorEventCallback != nullptr) {
+      JsonDocument jsonMsg;
+      jsonMsg["type"] = "motor_state";
+      jsonMsg["state"] = getMotorState_as_string().c_str();
+      jsonMsg.shrinkToFit();
+      _motorEventCallback(jsonMsg);
+    }
+  } else {
+    LOGE(TAG, "Stepper driver setup failed!");
+    _stepper->setAutoEnable(false);
+    _initializationState = InitializationState::UNITITIALIZED;
+    _driverComState = DriverComState::ERROR;
+    _motorState = MotorState::ERROR;
+    led.setMode(LED::LEDMode::ERROR);
+
+    // execute callback (from website)
+    if (_motorEventCallback != nullptr) {
+      JsonDocument jsonMsg;
+      jsonMsg["type"] = "motor_state";
+      jsonMsg["state"] = getMotorState_as_string().c_str();
+      jsonMsg.shrinkToFit();
+      _motorEventCallback(jsonMsg);
+    }
+  }
+}
+
 // final part of initialization
 void Stepper::_initTMC2209Finished() {
   LOGD(TAG, "Final pwmAutoScale: %d", _stepper_driver.getPwmScaleAuto());
@@ -278,6 +351,9 @@ void Stepper::_checkTMC2209Gradient() {
   LOGD(TAG, "Check pwmAutoScale: %d", pwmAutoScale);
   if (abs(pwmAutoScale) < 10) {
     _initTMC2209Finished();
+    // Remember values to skip initialization on power loss
+    _pwmGradient = _stepper_driver.getPwmGradientAuto();
+    _pwmOffset = _stepper_driver.getPwmOffsetAuto();
   } else {
     // Try again in half a second
     Task* optimizeGradientTask = new Task(TASK_IMMEDIATE, TASK_ONCE, [&] { _initTMC2209Gradient(); }, _scheduler, false, NULL, NULL, true);
@@ -366,7 +442,7 @@ void Stepper::_initTMC2209() {
     _checkTMC2209Task->enableDelayed(1000);
   }
 
-  LOGI(TAG, "Running TMC2209 setup%s", _driverComState == DriverComState::UNKNOWN ? "..." : " again!");
+  LOGI(TAG, "Running TMC2209 initialization routine%s", _driverComState == DriverComState::UNKNOWN ? "..." : " again!");
   // 16 µSteps & 1.8°/per step --> 3200 (200*16) µSteps per rev --> with 8mm pitch --> 400 µSteps per mm
   _stepper_driver.setMicrostepsPerStep(USTEPS_PER_STEP);
 
@@ -439,9 +515,14 @@ void Stepper::_checkTMC2209() {
         _motorEventCallback(jsonMsg);
       }
     }
-    // Set up a task for initializing the motor
-    Task* reInitTMC2209Task = new Task(100, TASK_ONCE, [&] { _initTMC2209(); }, _scheduler, false, NULL, NULL, true);
-    reInitTMC2209Task->enable();
+    // Set up a task for (re-)initializing the driver
+    if (_initializationState == InitializationState::OK) {
+      Task* reInitTMC2209Task = new Task(100, TASK_ONCE, [&] { _reInitTMC2209(); }, _scheduler, false, NULL, NULL, true);
+      reInitTMC2209Task->enable();
+    } else {
+      Task* initTMC2209Task = new Task(100, TASK_ONCE, [&] { _initTMC2209(); }, _scheduler, false, NULL, NULL, true);
+      initTMC2209Task->enable();
+    }
   } else {
     // check if motor is running (fastAccelStepper)
     if (_stepper->getCurrentSpeedInMilliHz() != 0) {
@@ -772,7 +853,9 @@ std::string Stepper::getHomingState_as_string() {
 }
 
 void Stepper::_checkMovementCallback() {
+  // Get current position
   int32_t position = _stepper->getCurrentPosition() / STEPS_PER_MM;
+
   // send websock event
   if (_motorEventCallback != nullptr) {
     JsonDocument jsonMsg;

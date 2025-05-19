@@ -4,7 +4,7 @@ Web app / µROS controlled and esp32-powered linear drive thingy using TMC2209 a
 
 ## Why do I need it?
 
-This repository is part of the EU funded research project [Hospibot](https://hospibot.eu/).
+This repository is part of the EU funded research project [HospiBot](https://hospibot.eu/).
 It's intended as a test application for controlling a linear drive using µROS.
 
 ## Web logging
@@ -27,6 +27,10 @@ Install development dependencies:
 Then clone the repository, open it in [Visual Studio Code](https://code.visualstudio.com/), possibly adjust the `platformio.ini` to your likings and build it for your board. After a (successful) build, you can flash it using esptool (a hint on the command line is given after building).  
 
 ## Acknowledgements
+
+* The TMC2209 Stepper Driver is controlled using the [TMC2209](https://github.com/janelia-arduino/TMC2209) library. 
+
+* For generating the steps, the [FastAccelStepper](https://github.com/gin66/FastAccelStepper) library is used.
 
 * The favicon was prepared according (loosely) the guide [How to Favicon in 2025](https://evilmartians.com/chronicles/how-to-favicon-in-2021-six-files-that-fit-most-needs). 
 
