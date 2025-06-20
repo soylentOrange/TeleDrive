@@ -36,8 +36,7 @@ void LED::end() {
   if (_ledTask != nullptr) {
     _ledTask->disable();
   }
-
-  //_ledDisable();
+  
   LOGD(TAG, "...done!");
 }
 
@@ -46,14 +45,9 @@ void LED::_ledInitCallback() {
 
   // use LEDC PWM timer for plain LEDs
   if (!_isRGB) {
-    // Arduino2
     ledcSetup(LEDC_CHANNEL, LEDC_FREQ, LEDC_DUTY_RES);
     ledcAttachPin(_ledPin, LEDC_CHANNEL);
     ledcWrite(LEDC_CHANNEL, 0);
-
-    // // Arduino3
-    // ledcAttach(_ledPin, LEDC_FREQ, LEDC_DUTY_RES);
-    // ledcWrite(_ledPin, 0);
   }
 
   // set current mode to none

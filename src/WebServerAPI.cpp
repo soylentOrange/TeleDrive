@@ -47,10 +47,6 @@ void WebServerAPI::_webServerCallback() {
     .setCacheControl("max-age=600")
     .setFilter([&](__unused AsyncWebServerRequest* request) { return _fsMounted; });
 
-  // serve logo for espConnect
-  _webServer->serveStatic("/logo", LittleFS, "/logo_captive.svg")
-    .setFilter([&](__unused AsyncWebServerRequest* request) { return _fsMounted; });
-
   // clear persisted wifi config
   _webServer->on("/api/system/clearwifi", HTTP_POST, [&](AsyncWebServerRequest* request) {
     LOGW(TAG, "Clearing WiFi configuration...");

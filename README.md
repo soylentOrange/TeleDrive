@@ -18,9 +18,9 @@ It's intended as a test application for controlling a linear drive using µROS.
 | SAFEBOOT | slowly flashing white | Safeboot active |
 | INITIALIZING | quickly flashing green | Motor calibration |
 | ERROR | quickly flashing red | Error has occurred |
-| HOMING | breathing blue | driving towards home position | 
+| HOMING | breathing blue | driving towards home position | 
 | IDLE | solid green | waiting for input |
-| DRIVING | breathing green| motor is running |
+| DRIVING | breathing green| motor is running |
 | NONE | off | default, shouldn't happen|
 
 ### Required Hardware
