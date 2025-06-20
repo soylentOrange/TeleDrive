@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 /*
- * Copyright (C) 2023-2025 Mathieu Carbou
+ * Copyright (C) 2023-2025 Mathieu Carbou, 2025 Robert Wendlandt
  */
 
+#include <ArduinoJson.h>
 #include <ArduinoOTA.h>
 #include <HardwareSerial.h>
 #include <MycilaESPConnect.h>
@@ -35,14 +36,28 @@ static Mycila::ESPConnect espConnect;
 static Mycila::ESPConnect::Config espConnectConfig;
 static StreamString updaterError;
 
-static String getChipIDStr() {
-  uint32_t chipId = 0;
-  for (int i = 0; i < 17; i += 8) {
-    chipId |= ((ESP.getEfuseMac() >> (40 - i)) & 0xff) << i;
-  }
-  String espId = String(chipId, HEX);
-  espId.toUpperCase();
-  return espId;
+#ifdef MYCILA_SAFEBOOT_USE_LED
+  #define LEDC_DUTY_RES          (8)
+  #define LED_BRIGHT_OFF         (0)
+  #define LED_BRIGHT_DIM         (50)
+  #define LEDC_FREQ              (4000)
+  #define LED_MILLI_COMPARE_FAST (100)
+  #define LED_MILLI_COMPARE_SLOW (400)
+  #define LED_MILLI_COMPARE_OFF  (-100)
+uint32_t lastMillis;
+uint32_t led_milliCompare = LED_MILLI_COMPARE_SLOW;
+  #ifdef RGB_BUILTIN
+bool ledState = false;
+  #endif
+#endif
+
+static void scanWiFi() {
+  WiFi.scanDelete();
+#ifndef ESP8266
+  WiFi.scanNetworks(true, false, false, 500, 0, nullptr, nullptr);
+#else
+  WiFi.scanNetworks(true);
+#endif
 }
 
 static void start_web_server() {
@@ -58,7 +73,6 @@ static void start_web_server() {
   });
 
   webServer.on("/sbversion", HTTP_GET, [&]() {
-    // webServer.send(200, "text/plain", __COMPILED_APP_VERSION__);
     webServer.send(200, "text/plain", APP_VERSION);
   });
 
@@ -75,6 +89,11 @@ static void start_web_server() {
       webServer.send(200, "text/plain", cancelResponse);
       webServer.client().stop();
       delay(1000);
+#ifndef RGB_BUILTIN
+      ledcWrite(LED_BUILTIN, LED_BRIGHT_OFF);
+#else
+      rgbLedWrite(LED_BUILTIN, 0, 0, 0);
+#endif
       ESP.restart();
     },
     [&]() {
@@ -83,6 +102,59 @@ static void start_web_server() {
   webServer.on("/", HTTP_GET, [&]() {
     webServer.sendHeader("Content-Encoding", "gzip");
     webServer.send_P(200, "text/html", reinterpret_cast<const char*>(update_html_start), update_html_end - update_html_start);
+  });
+
+  webServer.on("/scan", HTTP_GET, [&]() {
+    int n = WiFi.scanComplete();
+
+    if (n == WIFI_SCAN_RUNNING) {
+      LOG("WIFI_SCAN_RUNNING\n");
+      // scan still running ? wait...
+      webServer.send(202);
+
+    } else if (n == WIFI_SCAN_FAILED) {
+      LOG("WIFI_SCAN_FAILED\n");
+      // scan error or finished with no result ?
+      // re-scan
+      scanWiFi();
+      webServer.send(202);
+
+    } else {
+      // scan results ?
+      JsonDocument json;
+      JsonArray array = json.to<JsonArray>();
+
+      // we have some results
+      for (int i = 0; i < n; ++i) {
+        JsonObject entry = array.add<JsonObject>();
+        entry["bssid"] = WiFi.BSSIDstr(i);
+        entry["name"] = WiFi.SSID(i);
+        entry["rssi"] = WiFi.RSSI(i);
+        entry["open"] = WiFi.encryptionType(i) == WIFI_AUTH_OPEN;
+        entry["current"] = (WiFi.SSID(i) == espConnectConfig.wifiSSID) && !espConnectConfig.apMode;
+      }
+
+      // Add a possible access point (when not connected yet)
+      if (espConnectConfig.apMode) {
+        JsonObject entry = array.add<JsonObject>();
+        entry["bssid"] = "AP";
+        entry["name"] = espConnectConfig.hostname;
+        entry["rssi"] = 0;
+        entry["open"] = true;
+        entry["current"] = true;
+      }
+
+      WiFi.scanDelete();
+      json.shrinkToFit();
+      size_t jsonSize = measureJson(json);
+      void* buffer = malloc(jsonSize);
+      serializeJson(json, buffer, jsonSize);
+      webServer.send_P(200, "application/json", reinterpret_cast<const char*>(buffer), measureJson(json));
+      free(buffer);
+
+      // start next scan for wifi networks
+      scanWiFi();
+    }
   });
 
   webServer.on(
@@ -123,6 +195,36 @@ static void start_web_server() {
       }
     });
 
+  // receive credentials for connecting to a network
+  webServer.on("/connect", HTTP_POST, [&]() {
+    if (webServer.hasArg("plain") == false) {
+      webServer.send(400);
+    }
+    String body = webServer.arg("plain");
+    JsonDocument jsonRXMsg;
+    DeserializationError error = deserializeJson(jsonRXMsg, body);
+
+    if (error == DeserializationError::Ok) {
+      webServer.client().setNoDelay(true);
+      webServer.send(200, "text/plain", "OK");
+      webServer.client().stop();
+      espConnectConfig.apMode = false;
+      espConnectConfig.wifiBSSID = jsonRXMsg["bssid"].as<const char*>();
+      espConnectConfig.wifiSSID = jsonRXMsg["ssid"].as<const char*>();
+      espConnectConfig.wifiPassword = jsonRXMsg["pwd"].as<const char*>();
+      espConnect.saveConfiguration(espConnectConfig);
+      delay(1000);
+#ifndef RGB_BUILTIN
+      ledcWrite(LED_BUILTIN, LED_BRIGHT_OFF);
+#else
+      rgbLedWrite(LED_BUILTIN, 0, 0, 0);
+#endif
+      ESP.restart();
+    } else {
+      webServer.send(400);
+    }
+  });
+
   webServer.begin();
 
 #ifndef MYCILA_SAFEBOOT_NO_MDNS
@@ -147,7 +249,7 @@ static void start_network_manager() {
 
   // reuse a potentially set hostname from main app, or set a default one
   if (!espConnectConfig.hostname.length()) {
-    espConnectConfig.hostname = "SafeBoot-" + getChipIDStr();
+    espConnectConfig.hostname = DEFAULT_HOSTNAME;
   }
 
   // If the passed config is to be in AP mode, or has a SSID that's fine.
@@ -160,6 +262,8 @@ static void start_network_manager() {
     espConnect.setCaptivePortalTimeout(20);
 #else
     espConnectConfig.apMode = true;
+    // Show quickly blinking LED
+    // apMode == true --> happens automatically
 #endif
   }
 
@@ -169,6 +273,12 @@ static void start_network_manager() {
       // if ETH DHCP times out, we start AP mode
       espConnectConfig.apMode = true;
       espConnect.setConfig(espConnectConfig);
+      // Show quickly flashing white LED
+      // apMode == true --> happens automatically
+    } else if (state == Mycila::ESPConnect::State::NETWORK_CONNECTED) {
+      LOG("Connected to WiFi...\n");
+      // Show flashing white LED
+      led_milliCompare = LED_MILLI_COMPARE_SLOW;
     }
   });
 
@@ -179,6 +289,17 @@ static void start_network_manager() {
   } else if (espConnectConfig.wifiSSID.length()) {
     LOG("SSID: %s\n", espConnectConfig.wifiSSID.c_str());
     LOG("BSSID: %s\n", espConnectConfig.wifiBSSID.c_str());
+  }
+
+  // Show solid white LED when waiting for connection
+  if (!espConnectConfig.apMode) {
+    led_milliCompare = LED_MILLI_COMPARE_OFF;
+#ifndef RGB_BUILTIN
+    ledcWrite(LED_BUILTIN, LED_BRIGHT_DIM);
+#else
+    ledState = 1;
+    rgbLedWrite(LED_BUILTIN, COLOR_CORR_R >> 2, COLOR_CORR_G >> 2, COLOR_CORR_B >> 2);
+#endif
   }
 
   // connect...
@@ -211,15 +332,54 @@ void setup() {
   #endif
 #endif
 
-  LOG("Version: %s\n", __COMPILED_APP_VERSION__);
+  LOG("Version: %s\n", APP_VERSION);
   set_next_partition_to_boot();
   start_network_manager();
+
+  // scan for wifi networks
+  scanWiFi();
+
   start_mdns();
   start_web_server();
   start_arduino_ota();
+
+  // setup LED
+#ifdef MYCILA_SAFEBOOT_USE_LED
+  // use LEDC PWM timer for plain LEDs
+  if (!RGB_BUILTIN) {
+    ledcAttach(LED_BUILTIN, LEDC_FREQ, LEDC_DUTY_RES);
+    ledcWrite(LED_BUILTIN, 0);
+  }
+  // remember timestamp of start
+  lastMillis = millis();
+#endif
 }
 
 void loop() {
   webServer.handleClient();
   ArduinoOTA.handle();
+
+  // toggle the LED
+#ifdef MYCILA_SAFEBOOT_USE_LED
+  uint32_t currentMillis = millis();
+  if (currentMillis - lastMillis > (espConnectConfig.apMode ? LED_MILLI_COMPARE_FAST : led_milliCompare)) {
+    lastMillis = currentMillis;
+
+  #ifndef RGB_BUILTIN
+    if (ledcRead(LED_BUILTIN) == LED_BRIGHT_DIM) {
+      ledcWrite(LED_BUILTIN, LED_BRIGHT_OFF);
+    } else {
+      ledcWrite(LED_BUILTIN, LED_BRIGHT_DIM);
+    }
+  #else
+    if (!ledState) {
+      ledState = 1;
+      rgbLedWrite(LED_BUILTIN, COLOR_CORR_R >> 2, COLOR_CORR_G >> 2, COLOR_CORR_B >> 2);
+    } else {
+      ledState = 0;
+      rgbLedWrite(LED_BUILTIN, 0, 0, 0);
+    }
+  #endif
+  }
+#endif
 }

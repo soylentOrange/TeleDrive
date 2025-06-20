@@ -800,6 +800,7 @@
     help_text.innerHTML = "Connecting..."
     showWebsockStatus(websock_state_enum.connecting)
     showMotorState(motor_state_enum.unknown)
+    showROSState(ros_state)
     websocket = new WebSocket(gateway)
     websocket.onopen = onOpen
     websocket.onclose = onClose
@@ -1191,7 +1192,7 @@
       }
 
       const info_text = await response.text()
-      return info_text
+      return info_text.replaceAll('_', '_\u200B')
     } catch (error) {
       return "Unknown"
     }

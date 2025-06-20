@@ -5,11 +5,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>SafeBoot</title>
-  <style type="text/css">
+  <style>
     * {
       margin: auto;
       text-align: center;
-      align-items: center;
       font-family: Tahoma, Verdana, sans-serif;
       color: black;
       font-weight: normal;
@@ -53,7 +52,7 @@
     .progress_text_area {
       width: 80px;
       font-size: 16px;
-      color: black;
+      color: #36454F;
       text-align: center;
       margin-left: 0;
       padding-left: 10px;
@@ -82,7 +81,6 @@
 
     .header {
       width: 90%;
-      align-items: center;
       text-align: center;
       padding: 0;
       margin: 0 auto 0 auto;
@@ -111,7 +109,7 @@
       margin-left: 0;
       padding-left: 10px;
       text-align: left;
-      color: black;
+      color: #36454F;
     }
 
     .info_text_value {
@@ -120,6 +118,31 @@
       padding-right: 10px;
       text-align: right;
       color: gray;
+    }
+
+    .text_password_value {
+      width: 65%;
+      margin-right: 0;
+      padding: 0;
+      padding-left: 5px;
+      text-align: left;
+      color: #36454F;
+      /* Safari/Chrome, other WebKit */
+      -webkit-box-sizing: border-box;
+      /* Firefox, other Gecko */
+      -moz-box-sizing: border-box;
+      /* Opera/IE 8+ */
+      box-sizing: border-box;
+    }
+
+    select.wifiSelect {
+      width: 65%;
+      margin-right: 0;
+      padding: 0;
+      font-size: 14px;
+      color: #36454F;
+      text-align: left;
+      align-content: left;
     }
 
     p {
@@ -182,6 +205,11 @@
       -moz-user-select: none;
       -ms-user-select: none;
       user-select: none;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
     }
 
     .svg_badge {
@@ -355,6 +383,24 @@
       <div class="result_text" , id="result_text">OK!</div>
     </div>
 
+    <div class="column" id="wifi_area">
+      <hr />
+      <div id="info_texts" class="info_texts">
+        <div id="info_text_ssid" class="info_text_container">
+          <div class="info_text_name">SSID:</div>
+          <select name="ssid_select" id="ssid_select" class="wifiSelect">
+            <option value="" disabled>Scanning...</option>
+          </select>
+        </div>
+        <div id="info_text_password" class="info_text_container">
+          <div class="info_text_name">Password:</div>
+          <input type="text" autocorrect="off" autocomplete="off" autocapitalize="off" class="text_password_value"
+            id="text_password" disabled></input>
+        </div>
+      </div>
+      <button id="wifi_button" disabled>Connect</button>
+    </div>
+
     <div class="column" id="info_area">
       <hr />
       <div id="info_texts" class="info_texts">
@@ -371,21 +417,26 @@
     </div>
   </div>
   <script>
-    const file_input = document.createElement("input");
-    const progress_bar = document.getElementById("progress_bar");
-    const progress_container = document.getElementById("progress_container");
-    const result_loader = document.getElementById("result_loader_animation");
-    const drop_zone = document.getElementById("drop_zone");
-    const progress_text = document.getElementById("progress_text");
-    const info_area = document.getElementById("info_area");
-    const result_container = document.getElementById("result_container");
-    const result_text = document.getElementById("result_text");
-    const svg_success = document.getElementById("svg_success");
-    const svg_error = document.getElementById("svg_error");
-    const restart_button = document.getElementById("restart_button");
-    const info_text_chip = document.getElementById("info_text_chip");
-    const info_text_build = document.getElementById("info_text_build");
-    const help_text = document.getElementById("help_text");
+    // UI Elements
+    const file_input = document.createElement("input")
+    const progress_bar = document.getElementById("progress_bar")
+    const progress_container = document.getElementById("progress_container")
+    const result_loader = document.getElementById("result_loader_animation")
+    const drop_zone = document.getElementById("drop_zone")
+    const progress_text = document.getElementById("progress_text")
+    const info_area = document.getElementById("info_area")
+    const wifi_area = document.getElementById("wifi_area")
+    const ssid_select = document.getElementById("ssid_select")
+    const text_password = document.getElementById("text_password")
+    const result_container = document.getElementById("result_container")
+    const result_text = document.getElementById("result_text")
+    const svg_success = document.getElementById("svg_success")
+    const svg_error = document.getElementById("svg_error")
+    const restart_button = document.getElementById("restart_button")
+    const wifi_button = document.getElementById("wifi_button")
+    const info_text_chip = document.getElementById("info_text_chip")
+    const info_text_build = document.getElementById("info_text_build")
+    const help_text = document.getElementById("help_text")
     const clickable_file_input = document.getElementById(
       "clickable_file_input"
     );
@@ -400,17 +451,118 @@
       "info_text_buildname"
     );
 
-    // Hack for captive portal on apple devices
-    // The browser is very limited and won't open a file upload dialog
-    // thus, we'll only present the option to drag-and-drop
-    if (
-      navigator.userAgent.match(
-        ".*(AppleWebKit){1}.*(\(KHTML, like Gecko\).?)$"
-      )
-    ) {
-      clickable_file_input.innerHTML =
-        "accepts<br />one firmware (.bin) file";
+    // SSID select
+    let networks = []
+
+    // initialize the website
+    // - set up UI
+    async function initWebsite() {
+      // // Set wifi-button to disabled at start
+      wifi_button.disabled = true
+
+      // Hack for captive portal on apple devices
+      // The browser is very limited and won't open a file upload dialog
+      // thus, we'll only present the option to drag-and-drop
+      if (
+        navigator.userAgent.match(
+          ".*(AppleWebKit){1}.*(\(KHTML, like Gecko\).?)$"
+        )
+      ) {
+        clickable_file_input.innerHTML =
+          "accepts one bin-file";
+      }
+
+      // Adjust display style of firmware/filesystem
+      label_firmware.style.color = "#36454F"
+
+      mode_checkbox.addEventListener("change", function () {
+        if (mode_checkbox.checked) {
+          label_firmware.style.color = "gray"
+          label_filesystem.style.color = "#36454F"
+        } else {
+          label_firmware.style.color = "#36454F"
+          label_filesystem.style.color = "gray"
+        }
+      });
+
+      file_input.type = "file"
+      file_input.accept = ".bin"
+
+      file_input.addEventListener("change", () => {
+        if (file_input.files.length == 1) {
+          uploadFile(file_input.files)
+        }
+      });
+
+      drop_zone.addEventListener("click", (event) => {
+        event.stopPropagation()
+        file_input.click()
+      });
+
+      drop_zone.addEventListener("drop", (event) => {
+        event.preventDefault()
+        drop_zone.style.border = "1px dashed gray"
+        if (checkDropItems(event.dataTransfer.items)) {
+          uploadFile(event.dataTransfer.files);
+        } else {
+          drop_zone.animate(
+            [{ border: "1px solid red" }, { border: "1px dashed gray" }],
+            {
+              duration: 500,
+              iterations: 5,
+            }
+          )
+        }
+      })
+
+      drop_zone.addEventListener("dragover", (event) => {
+        event.preventDefault()
+        drop_zone.style.border = "1px solid gray"
+      });
+
+      drop_zone.addEventListener("dragleave", (event) => {
+        event.preventDefault()
+        drop_zone.style.border = "1px dashed gray"
+      })
+
+      restart_button.addEventListener("click", () => {
+        restartThingy()
+      })
+
+      // Connect button clicked...
+      wifi_button.addEventListener("click", () => {
+        console.log(networks[ssid_select.options.selectedIndex].name)
+        console.log(networks[ssid_select.options.selectedIndex].bssid)
+        console.log(text_password.value)
+        submitNetwork(networks[ssid_select.options.selectedIndex].name, networks[ssid_select.options.selectedIndex].bssid, text_password.value)
+      })
+
+      // Network was selected...
+      ssid_select.addEventListener("change", () => {
+        var network = networks[ssid_select.options.selectedIndex]
+        // new network selected?
+        if (!network.current) {
+          wifi_button.disabled = false
+          text_password.value = ""
+
+          // allow password entry
+          if (network.open) {
+            text_password.disabled = true
+          } else {
+            text_password.disabled = false
+          }
+        } else {
+          wifi_button.disabled = true
+          text_password.value = ""
+          text_password.disabled = true
+        }
+      })
+
+      // fetch and display infos
+      getInfos();
+      getNetworks();
     }
+
 
     // fetch some text info from a given url
     async function getInfo(info_url) {
@@ -428,78 +580,113 @@
       }
     }
 
-    // get board name and safeboot version from webserver
-    async function getInfos() {
-      var chipspecs = await getInfo("/chipspecs");
-      if (chipspecs == "Unknown") {
-        info_text_chipspecs.style.display = "none";
-      }
-      info_text_chip.innerHTML = chipspecs;
+    async function submitNetwork(ssid, bssid, password) {
+      try {
+        const response = await fetch("/connect", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            ssid: ssid,
+            bssid: bssid,
+            pwd: password
+          }),
+        })
+        if (!response.ok) {
+          throw new Error(`Failed! ${response.status}`)
+        }
 
-      var sbversion = await getInfo("/sbversion");
-      if (sbversion == "Unknown") {
-        info_text_buildname.style.display = "none";
+        // submitted, show result...
+        showResultContainer();
+        help_text.innerHTML = " ";
+        result_loader.style.display = "none";
+        svg_success.style.display = "block";
+        result_text.innerHTML = "Connecting to network...";
+
+        // it takes a few seconds before the device has restarted
+        // reloading "/" will actually load the homepage of the main-firmware
+        refreshHome(7500);
+
+        console.log("submitted credentials")
+      } catch (error) {
+        console.log("error submitted credentials")
       }
-      info_text_build.innerHTML = sbversion;
     }
 
-    getInfos();
-
-    label_firmware.style.color = "black";
-
-    mode_checkbox.addEventListener("change", function () {
-      if (mode_checkbox.checked) {
-        label_firmware.style.color = "gray";
-        label_filesystem.style.color = "black";
-      } else {
-        label_firmware.style.color = "black";
-        label_filesystem.style.color = "gray";
+    // get board name and safeboot version from webserver
+    async function getInfos() {
+      var chipspecs = await getInfo("/chipspecs")
+      if (chipspecs == "Unknown") {
+        info_text_chipspecs.style.display = "none"
       }
-    });
+      info_text_chip.innerHTML = chipspecs
 
-    file_input.type = "file";
-    file_input.accept = ".bin";
-
-    file_input.addEventListener("change", () => {
-      if (file_input.files.length == 1) {
-        uploadFile(file_input.files);
+      var sbversion = await getInfo("/sbversion")
+      if (sbversion == "Unknown") {
+        info_text_buildname.style.display = "none"
       }
-    });
+      info_text_build.innerHTML = sbversion
+    }
 
-    drop_zone.addEventListener("click", (event) => {
-      event.stopPropagation();
-      file_input.click();
-    });
+    // get WiFis in the vicinity from webserver
+    async function getNetworks() {
+      try {
+        const response = await fetch("/scan");
+        if (!response.ok) {
+          console.log(`Failed fetching scan: ${response.status}`)
+          throw new Error(`Failed fetching scan!`)
+        }
 
-    drop_zone.addEventListener("drop", (event) => {
-      event.preventDefault();
-      drop_zone.style.border = "1px dashed gray";
-      if (checkDropItems(event.dataTransfer.items)) {
-        uploadFile(event.dataTransfer.files);
-      } else {
-        drop_zone.animate(
-          [{ border: "1px solid red" }, { border: "1px dashed gray" }],
-          {
-            duration: 500,
-            iterations: 5,
-          }
-        );
+        if (response.status != 200) {
+          console.log(`Scan incomplete: ${response.status}`)
+          throw new Error(`Scan incomplete!`)
+        }
+
+        // clear the options
+        while (ssid_select.options.length > 0) {
+          ssid_select.options.remove(0)
+        }
+
+        // process the result of the network scan
+        var scanned_networks = await response.json()
+        if (scanned_networks.length > 0) {
+          // store the currently connected network 
+          var current_network = [...scanned_networks]
+          current_network = current_network.filter(a => a.current == true)
+          current_network = current_network[0]
+
+          // store the remaining networks
+          var available_networks = [...scanned_networks]
+          available_networks = available_networks.filter(a => a.current == false)
+          available_networks.sort((a, b) => b.rssi - a.rssi)
+
+          // store all of the networks
+          networks = [current_network, ...available_networks]
+
+          // add the networks to the option list
+          ssid_select.options.add(new Option(text = `${current_network.name} (${current_network.bssid == "AP" ? "SoftAP" : "current"})`, value = "current", defaultSelected = true, selected = true, disabled = true))
+          available_networks.forEach(network => {
+            ssid_select.options.add(new Option(text = `${network.name} (${network.rssi} dbm)`, value = network.bssid))
+          })
+          text_password.value = ""
+          text_password.disabled = true
+          wifi_button.disabled = true
+
+        } else { // we got nothing...
+          ssid_select.options.add(new Option(text = "Scanning...", value = "scanning", defaultSelected = true, disabled = true, selected = true))
+          networks = []
+          text_password.value = ""
+          text_password.disabled = true
+          console.log(scanned_networks)
+          throw new Error("Nothing found")
+        }
+      } catch (error) {
+        setTimeout(() => {
+          getNetworks()
+        }, 1000)
       }
-    });
-
-    drop_zone.addEventListener("dragover", (event) => {
-      event.preventDefault();
-      drop_zone.style.border = "1px solid gray";
-    });
-
-    drop_zone.addEventListener("dragleave", (event) => {
-      event.preventDefault();
-      drop_zone.style.border = "1px dashed gray";
-    });
-
-    restart_button.addEventListener("click", () => {
-      restartThingy();
-    });
+    }
 
     async function restartThingy() {
       showResultContainer();
@@ -612,6 +799,7 @@
       drop_zone.style.display = "none";
       progress_container.style.display = "block";
       info_area.style.display = "none";
+      wifi_area.style.display = "none";
       help_text.innerHTML = " ";
       mode_container.style.display = "none";
     }
@@ -620,6 +808,7 @@
       drop_zone.style.display = "none";
       progress_container.style.display = "none";
       info_area.style.display = "none";
+      wifi_area.style.display = "none";
       result_container.style.display = "block";
       svg_success.style.display = "none";
       svg_error.style.display = "none";
@@ -627,6 +816,11 @@
       help_text.innerHTML = " ";
       mode_container.style.display = "none";
     }
+
+    // initialize Website
+    window.addEventListener("DOMContentLoaded", event => {
+      initWebsite()
+    })
   </script>
 </body>
 
