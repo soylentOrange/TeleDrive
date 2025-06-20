@@ -7,7 +7,25 @@ Web app / µROS controlled and esp32-powered linear drive thingy using TMC2209 a
 This repository is part of the EU funded research project [HospiBot](https://hospibot.eu/).
 It's intended as a test application for controlling a linear drive using µROS.
 
-## Web logging
+## How do I use it?
+
+### LED Colour Codes
+
+| State | LED | Description | 
+| :--- | :--- | :--- |
+| WAITING_WIFI | solid white | waiting for connection to WiFi | 
+| WAITING_CAPTIVE | quickly flashing white | WiFi not found / timeout while connecting - Safeboot active |
+| SAFEBOOT | slowly flashing white | Safeboot active |
+| INITIALIZING | quickly flashing green | Motor calibration |
+| ERROR | quickly flashing red | Error has occurred |
+| HOMING | breathing blue | driving towards home position | 
+| IDLE | solid green | waiting for input |
+| DRIVING | breathing green| motor is running |
+| NONE | off | default, shouldn't happen|
+
+### Required Hardware
+
+### Web logging
 
 Even though there is no button for it, if you open tdrive.local/weblog, you'll see a logging window. 
 
@@ -38,7 +56,7 @@ Then clone the repository, open it in [Visual Studio Code](https://code.visualst
 
 * The Toast notifications are made with [Toastify](https://github.com/apvarun/toastify-js).
 
-* The status indicators are made with [<status-indicator/>](https://github.com/tnhu/status-indicator).
+* The status indicators are made with [status-indicator](https://github.com/tnhu/status-indicator).
 
 * Splashcreens for iOS are auto-generated with [iosPWASplash](https://github.com/avadhesh18/iosPWASplash).
 

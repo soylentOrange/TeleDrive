@@ -16,27 +16,39 @@ void ESPNetwork::begin(Scheduler* scheduler) {
   if (_espConnect.getState() != Mycila::ESPConnect::State::NETWORK_DISABLED)
     _espConnect.end();
 
-  // get some info from espconnect's preferences
-  Preferences preferences;
-  preferences.begin("espconnect", true);
-  std::string ssid;
-  if (preferences.isKey("ssid"))
-    ssid = preferences.getString("ssid").c_str();
-  bool ap = preferences.isKey("ap") ? preferences.getBool("ap", false) : false;
-  preferences.end();
+  // load ESPConnect configuration
+  Mycila::ESPConnect::Config espConnectConfig;
+  _espConnect.loadConfiguration(espConnectConfig);
 
-  if (ssid.empty() || ap) {
-    LOGI(TAG, "Trying to start captive portal in the background...");
+  // reuse a potentially set hostname from main app, or set a default one
+  if (!espConnectConfig.hostname.length()) {
+    espConnectConfig.hostname = APP_NAME;
+  }
+
+  // If the passed config has a SSID that's fine.
+  // If the passed config is empty or is to be in AP mode, we'll stop rigth here and restart in Safeboot-Mode
+  if (espConnectConfig.apMode || !espConnectConfig.wifiSSID.length()) {
+    while (true) {
+      LOGW(TAG, "No valid WiFi-configuration found! Restarting in SafeBoot-mode...");
+      if (Mycila::System::restartFactory("safeboot", 1000)) {
+        LOGW(TAG, "Restarting in SafeBoot-mode...");
+        led.setMode(LED::LEDMode::WAITING_CAPTIVE);
+      } else {
+        LOGE(TAG, "SafeBoot-partition not found");
+        Mycila::System::restart(1000);
+        led.setMode(LED::LEDMode::ERROR);
+      }
+      delay(1500);
+    }
   } else {
-    LOGI(TAG, "Trying to connect to saved WiFi (%s) in the background...", ssid.c_str());
+    LOGI(TAG, "Trying to connect to saved WiFi (%s) in the background...", espConnectConfig.wifiSSID.c_str());
   }
 
   // configure and begin espConnect
   _espConnect.setAutoRestart(true);
   _espConnect.setBlocking(false);
-  _espConnect.setCaptivePortalTimeout(ESPCONNECT_TIMEOUT_CAPTIVE_PORTAL);
   _espConnect.setConnectTimeout(ESPCONNECT_TIMEOUT_CONNECT);
-  _espConnect.begin(APP_NAME, CAPTIVE_PORTAL_SSID, CAPTIVE_PORTAL_PASSWORD);
+  _espConnect.begin(espConnectConfig.hostname.c_str(), "", espConnectConfig);
 
   // Task handling
   _scheduler = scheduler;

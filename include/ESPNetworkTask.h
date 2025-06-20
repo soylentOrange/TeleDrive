@@ -9,7 +9,7 @@
 
 class ESPNetwork {
   public:
-    explicit ESPNetwork(AsyncWebServer& webServer) : _webServer(&webServer), _espConnect(webServer) {}
+    explicit ESPNetwork(AsyncWebServer& webServer) : _webServer(&webServer) {}
     void begin(Scheduler* scheduler);
     void end();
     void clearConfiguration();

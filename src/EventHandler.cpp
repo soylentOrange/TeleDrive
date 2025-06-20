@@ -44,19 +44,16 @@ void EventHandler::_networkStateCallback(Mycila::ESPConnect::State state) {
       _srConnected.signalComplete();
       break;
 
-    case Mycila::ESPConnect::State::AP_STARTED:
-      LOGI(TAG, "--> Created AP...");
-      LOGI(TAG, "SSID: %s", _espNetwork->getESPConnect()->getAccessPointSSID().c_str());
-      LOGI(TAG, "IPAddress: %s", _espNetwork->getESPConnect()->getIPAddress().toString().c_str());
-      led.setMode(stepper.getMotorState_as_LEDMode());
-      _srConnected.signalComplete();
-      break;
-
-    case Mycila::ESPConnect::State::PORTAL_STARTED:
-      LOGI(TAG, "--> Started Captive Portal...");
-      LOGI(TAG, "SSID: %s", _espNetwork->getESPConnect()->getAccessPointSSID().c_str());
-      LOGI(TAG, "IPAddress: %s", _espNetwork->getESPConnect()->getIPAddress().toString().c_str());
-      led.setMode(LED::LEDMode::WAITING_CAPTIVE);
+    case Mycila::ESPConnect::State::NETWORK_TIMEOUT:
+      LOGW(TAG, "--> Timeout connecting to network...");
+      if (Mycila::System::restartFactory("safeboot", 1000)) {
+        LOGW(TAG, "Restarting in SafeBoot mode...");
+        led.setMode(LED::LEDMode::WAITING_CAPTIVE);
+      } else {
+        LOGE(TAG, "SafeBoot partition not found");
+        Mycila::System::restart(1000);
+        led.setMode(LED::LEDMode::ERROR);
+      }
       _srConnected.setWaiting();
       break;
 
@@ -66,14 +63,25 @@ void EventHandler::_networkStateCallback(Mycila::ESPConnect::State state) {
       _srConnected.setWaiting();
       break;
 
+    // This must not happen
+    case Mycila::ESPConnect::State::AP_STARTED:
+      LOGE(TAG, "--> Created AP...");
+      Mycila::System::restart(1000);
+      led.setMode(LED::LEDMode::ERROR);
+      break;
+
+    // This must not happen
+    case Mycila::ESPConnect::State::PORTAL_STARTED:
+      LOGE(TAG, "--> Started Captive Portal...");
+      Mycila::System::restart(1000);
+      led.setMode(LED::LEDMode::ERROR);
+      break;
+
+    // This must not happen
     case Mycila::ESPConnect::State::PORTAL_COMPLETE: {
-      LOGI(TAG, "--> Captive Portal has ended, auto-save the configuration...");
-      auto config = _espNetwork->getESPConnect()->getConfig();
-      LOGD(TAG, "ap: %d", config.apMode);
-      LOGD(TAG, "wifiSSID: %s", config.wifiSSID.c_str());
-      LOGD(TAG, "wifiPassword: %s", config.wifiPassword.c_str());
-      led.setMode(LED::LEDMode::WAITING_WIFI);
-      _srConnected.setWaiting();
+      LOGE(TAG, "--> Captive Portal has ended, auto-save the configuration...");
+      Mycila::System::restart(1000);
+      led.setMode(LED::LEDMode::ERROR);
       break;
     }
 

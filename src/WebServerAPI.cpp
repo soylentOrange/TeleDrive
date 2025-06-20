@@ -74,14 +74,14 @@ void WebServerAPI::_webServerCallback() {
 
   // reboot esp into SafeBoot
   _webServer->on("/api/system/safeboot", HTTP_POST, [&](AsyncWebServerRequest* request) {
-    LOGW(TAG, "Restarting in SafeBoot mode...");
+    LOGW(TAG, "Restarting in SafeBoot-mode...");
     if (Mycila::System::restartFactory("safeboot", 1000)) {
       auto* response = request->beginResponse(200, "text/plain", "Restarting into SafeBoot now...");
       request->send(response);
       stepper.end();
       led.setMode(LED::LEDMode::NONE);
     } else {
-      LOGW(TAG, "SafeBoot partition not found");
+      LOGW(TAG, "SafeBoot-partition not found");
       auto* response = request->beginResponse(502, "text/plain", "SafeBoot partition not found!");
       request->send(response);
     }
